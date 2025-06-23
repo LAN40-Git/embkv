@@ -20,6 +20,9 @@ find_library(LIBEV_LIBRARY ev
     PATHS /usr/lib /usr/lib64 /usr/local/lib /usr/lib/x86_64-linux-gnu
 )
 
+# protobuf
+find_package(Protobuf REQUIRED)
+
 if(LIBEV_INCLUDE_DIR AND LIBEV_LIBRARY)
     message(STATUS "Found libev: ${LIBEV_LIBRARY}")
 

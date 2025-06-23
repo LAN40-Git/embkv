@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package embkv;
+
+// Raft 持久化状态
+message PersistentState {
+  uint64 current_term = 1;
+  optional uint64 voted_for = 2;
+  uint64 last_applied = 3;
+}
+
+// ========== 主消息封装 ==========
+message Message {
+  uint64 node_id = 1;       // 发送方节点ID
+  uint64 timestamp = 2;     // 消息发送时间戳（毫秒）
+
+  oneof content {
+    // Raft核心协议
+    VoteRequest vote_request = 3;
+    VoteReply vote_reply = 4;
+    AppendEntriesRequest append_entries_request = 5;
+    AppendEntriesReply append_entries_reply = 6;
+    InstallSnapshotRequest snapshot_request = 7;
+    InstallSnapshotReply snapshot_reply = 8;
+
+    // 客户端交互
+    ClientRequest client_request = 9;
+    ClientReply client_reply = 10;
+  }
+}
+
+// ========== Raft核心结构 ==========
+
+message LogEntry {
+  uint64 term = 1;
+  uint64 index = 2;
+  bytes client_request = 3;
+}
+
+message VoteRequest {
+  uint64 term = 1;
+  uint64 last_log_index = 2;
+  uint64 last_log_term = 3;
+}
+
+message VoteReply {
+  uint64 term = 1;
+  bool granted = 2;
+}
+
+message AppendEntriesRequest {
+  uint64 term = 1;
+  uint64 prev_log_index = 2;
+  uint64 prev_log_term = 3;
+  repeated LogEntry entries = 4;
+  uint64 leader_commit = 5;
+  bool is_heartbeat = 6;
+}
+
+message AppendEntriesReply {
+  uint64 term = 1;
+  bool success = 2;
+  uint64 conflict_index = 3;  // 用于日志快速恢复
+  uint64 last_log_index = 4;
+}
+
+message InstallSnapshotRequest {
+  uint64 term = 1;
+  uint64 snapshot_index = 2;
+  bytes snapshot_data = 3;  // 序列化的系统状态
+}
+
+message InstallSnapshotReply {
+  bool success = 1;
+}
+
+// ========== 客户端交互 ==========
+message ClientRequest {
+  uint64 request_id = 1;   // 客户端请求ID（用于去重）
+  bytes command = 2;       // 序列化的FileOperation
+}
+
+message ClientReply {
+  uint64 request_id = 1;      // 必须回显客户端请求的ID
+  uint64 leader_hint = 2;     // Leader节点ID提示（重定向用）
+  bool success = 3;           // 整体成功/失败
+  bytes result = 4;           // 操作结果（如文件内容）
+}
