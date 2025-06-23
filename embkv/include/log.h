@@ -1,6 +1,8 @@
 #pragma once
-#include "log/buffer.h"
-#include "log/level.h"
-#include "log/file.h"
+#include "log/logger.h"
+#include "common/util/singleton.h"
 
-// ====== log ======
+namespace embkv::log
+{
+    auto& console = util::Singleton<ConsoleLogger>::instance();
+}
