@@ -4,9 +4,10 @@ project(embkv)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 先定义源文件
 set(SOURCE_FILES
-    embkv/src/main.cpp
+        embkv/src/main.cpp
+        embkv/src/raft/raft_node.cpp
+        embkv/src/raft/transport.cpp
 )
 
 # fmt
@@ -22,18 +23,22 @@ find_library(LIBEV_LIBRARY ev
 
 # protobuf
 find_package(Protobuf REQUIRED)
+protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ./rpc.proto)
 
 if(LIBEV_INCLUDE_DIR AND LIBEV_LIBRARY)
-    message(STATUS "Found libev: ${LIBEV_LIBRARY}")
-
-    add_executable(main ${SOURCE_FILES})
+    add_executable(main
+            ${SOURCE_FILES}
+            ${PROTO_SRCS}
+    )
     target_include_directories(main PRIVATE
-        ${LIBEV_INCLUDE_DIR}
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/embkv/include>
+            ${LIBEV_INCLUDE_DIR}
+            ${PROTO_HDRS}
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/embkv/include>
     )
     target_link_libraries(main PRIVATE
-        ${LIBEV_LIBRARY}
-        fmt::fmt
+            ${LIBEV_LIBRARY}
+            ${PROTOBUF_LIBRARIES}
+            fmt::fmt
     )
 else()
     message(FATAL_ERROR "libev not found!")

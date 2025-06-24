@@ -1,0 +1,36 @@
+#pragma once
+#include "raft/peer/pipeline.h"
+#include <cstdint>
+#include <string>
+
+namespace embkv::raft
+{
+class Peer {
+public:
+    explicit Peer(uint64_t id, const std::string& name,
+                 const std::string& ip, uint16_t port) noexcept
+        : id_(id)
+        , name_(name)
+        , ip_(ip)
+        , port_(port)
+        , pipeline_(std::make_unique<Pipeline>()) {}
+    Peer(const Peer&) = delete;
+    Peer& operator=(const Peer&) = delete;
+    Peer(Peer&& other) noexcept = default;
+    Peer& operator=(Peer&&) noexcept = default;
+
+public:
+    auto id() const noexcept -> uint64_t { return id_; }
+    auto name() const noexcept -> const std::string& { return name_; }
+    auto ip() const noexcept -> const std::string& { return ip_; }
+    auto port() const noexcept -> uint16_t { return port_; }
+    auto pipeline() noexcept -> std::unique_ptr<Pipeline>& { return pipeline_; }
+
+private:
+    uint64_t                  id_;
+    std::string               name_;
+    std::string               ip_;
+    uint16_t                  port_;
+    std::unique_ptr<Pipeline> pipeline_;
+};
+}
