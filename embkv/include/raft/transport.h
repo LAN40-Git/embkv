@@ -1,4 +1,5 @@
 #pragma once
+#include <ev.h>
 #include <utility>
 #include "raft/session_manager.h"
 
@@ -11,7 +12,7 @@ public:
         : id_(id), name_(std::move(name)), ip_(std::move(ip)), port_(port), sess_mgr_(std::move(peers)) {}
 
 private:
-    void accept_loop();
+    void accept_cb(struct ev_loop* loop, struct ev_io* w, int revents);
     void try_connect_to_peer(uint64_t peer_id);
 
 private:

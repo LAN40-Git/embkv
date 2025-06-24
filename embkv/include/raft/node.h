@@ -4,6 +4,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <utility>
+#include "raft/transport.h"
 
 namespace embkv::raft
 {
@@ -38,8 +39,11 @@ private:
 
 class RaftNode {
 public:
-    explicit RaftNode(uint64_t id)
-        : st_(id) {}
+    explicit RaftNode(uint64_t id, struct ev_loop* loop = EV_DEFAULT)
+        : st_(id), loop_(loop) {
+        ev_init(&election_watcher_, handle_election_timeout);
+        ev_init(&heartbeat_watcher_, handle_heartbeat_timeout);
+    }
 
 public:
     void run() noexcept;
@@ -47,10 +51,20 @@ public:
     auto is_running() const noexcept -> bool {
         return is_running_.load(std::memory_order_relaxed);
     }
+
+public:
+    static void handle_election_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
+    static void handle_heartbeat_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
+
 private:
     // 运行状态
     std::atomic<bool>  is_running_{false};
     std::mutex         run_mutex_;
     detail::RaftStatus st_;
+    // 定时器
+    struct ev_timer election_watcher_{};
+    struct ev_timer heartbeat_watcher_{};
+    // ev 事件循环
+    struct ev_loop* loop_{nullptr};
 };
 }
