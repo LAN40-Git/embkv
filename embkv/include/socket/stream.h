@@ -17,8 +17,18 @@ public:
     auto fd() const noexcept { return inner_.fd(); }
 
 public:
-    static auto connect(const net::SocketAddr& addr) {
-        
+    static auto connect(const net::SocketAddr& addr) -> Stream {
+        auto sock(Socket::create(addr.family(), SOCK_STREAM, 0));
+
+        if (!sock.set_nonblock(1)) {
+            return Stream{-1};
+        }
+
+        auto ret = ::connect(sock.fd(), addr.sockaddr(), addr.length());
+        if (ret == 0) {
+            return std::move(sock);
+        }
+        return Stream{-1};
     }
 
 private:
