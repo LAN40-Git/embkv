@@ -7,8 +7,8 @@ auto embkv::socket::detail::Socket::bind(const net::SocketAddr& addr) const -> b
     return true;
 }
 
-auto embkv::socket::detail::Socket::listen(int maxn) const noexcept -> bool {
-    if (::listen(fd_, maxn) != 0) [[unlikely]] {
+auto embkv::socket::detail::Socket::listen(int maxn) const -> bool {
+    if (::listen(fd_, maxn) != 0) {
         return false;
     }
     return true;
