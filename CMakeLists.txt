@@ -8,6 +8,7 @@ set(SOURCE_FILES
         embkv/src/main.cpp
         embkv/src/raft/node.cpp
         embkv/src/raft/transport.cpp
+        embkv/src/socket/socket.cpp
 )
 
 # fmt

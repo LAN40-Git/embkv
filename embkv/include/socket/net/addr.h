@@ -69,19 +69,27 @@ public:
         addr_.in4.sin_addr.s_addr = ip.addr();
     }
 
-    [[nodiscard]]
+
+    auto family() const noexcept {
+        return addr_.in4.sin_family;
+    }
+
     auto ip() const noexcept -> Ipv4Addr {
         return Ipv4Addr{addr_.in4.sin_addr.s_addr};
     }
+
     void set_ip(Ipv4Addr ip) {
         addr_.in4.sin_addr.s_addr = ip.addr();
     }
+
     auto port() const -> uint16_t {
         return ::ntohs(addr_.in6.sin6_port);
     }
+
     void set_port(uint16_t port) {
         addr_.in6.sin6_port = ::htons(port);
     }
+
     auto to_string() const -> std::string {
         char buf[128];
         ::inet_ntop(AF_INET, &addr_.in4.sin_addr, buf, sizeof(buf) - 1);
@@ -96,7 +104,6 @@ public:
         return reinterpret_cast<struct sockaddr *>(&addr_);
     }
 
-    [[nodiscard]]
     auto length() const noexcept -> socklen_t {
         return sizeof(sockaddr_in);
     }
