@@ -3,18 +3,18 @@
 
 namespace embkv::util
 {
-class Fd {
+class FD {
 public:
-    explicit Fd(int fd = -1)
+    explicit FD(int fd = -1)
         : fd_{fd} {}
 
-    Fd(const Fd &) = delete;
-    Fd &operator=(const Fd &) = delete;
-    Fd(Fd && other) noexcept {
+    FD(const FD &) = delete;
+    FD &operator=(const FD &) = delete;
+    FD(FD && other) noexcept {
         fd_ = other.fd_;
         other.fd_ = -1;
     }
-    auto operator=(Fd && other) noexcept -> Fd&;
+    auto operator=(FD && other) noexcept -> FD&;
 
 public:
     auto fd() const noexcept { return fd_; }

@@ -23,7 +23,7 @@ private:
 
 
 private:
-    util::Fd          fd_;
+    util::FD          fd_;
     std::atomic<bool> is_running_{false};
     std::mutex        run_mutex_{};
     bool              is_connecting_{false};

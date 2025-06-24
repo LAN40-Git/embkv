@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(SOURCE_FILES
         embkv/src/main.cpp
-        embkv/src/raft/raft_node.cpp
+        embkv/src/raft/node.cpp
         embkv/src/raft/transport.cpp
 )
 
