@@ -11,7 +11,7 @@ public:
         : peers_(std::move(peers)) {}
     ~SessionManager() = default;
 
-private:
+public:
     // ====== peers ======
     auto peer_at(uint64_t id) -> Peer*;
     void add_peer(std::unique_ptr<Peer> peer) noexcept;
@@ -19,7 +19,6 @@ private:
     auto peer_count() const noexcept -> std::size_t { return peers_.size(); }
 
     // ======clients ======
-
 
 private:
     boost::shared_mutex peers_mutex_;

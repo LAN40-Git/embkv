@@ -4,7 +4,7 @@ project(embkv)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Boost 1.83.0 REQUIRED)
+find_package(Boost 1.83.0 REQUIRED COMPONENTS thread)
 
 set(SOURCE_FILES
         embkv/src/main.cpp
@@ -13,6 +13,7 @@ set(SOURCE_FILES
         embkv/src/raft/session_manager.cpp
         embkv/src/socket/socket.cpp
         embkv/src/common/util/fd.cpp
+        embkv/src/raft/peer/pipeline.cpp
 )
 
 # fmt
@@ -46,6 +47,7 @@ if(LIBEV_INCLUDE_DIR AND LIBEV_LIBRARY)
             ${LIBEV_LIBRARY}
             ${PROTOBUF_LIBRARIES}
             ${Boost_LIBRARIES}
+            Boost::thread
             fmt::fmt
     )
 else()
