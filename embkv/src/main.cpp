@@ -7,18 +7,47 @@ using namespace embkv::socket::detail;
 using namespace embkv::log;
 using namespace embkv::socket::net;
 
+static auto read_cb(struct ev_loop* loop, ev_io* w, int revents) {
+    auto stream = static_cast<TcpStream*>(w->data);
+    thread_local char buf[1024];
 
+    if (revents & EV_READ) {
+        auto bytes_read = stream->read(buf, sizeof(buf));
+        if (bytes_read > 0) {
+            buf[bytes_read] = '\0';
+            console.info("Received data: {}", buf);
+        } else if (bytes_read == 0) {  // 客户端关闭连接
+            console.info("Client disconnected");
+            ev_io_stop(loop, w);
+            delete stream;  // 释放 TcpStream 对象
+            delete w;       // 释放 ev_io 监视器
+        }
+    } else if (revents & EV_ERROR) {
+        console.error("READ ERROR");
+        ev_io_stop(loop, w);
+        delete stream;
+        delete w;
+    }
+}
 
-static void accept_cb(struct ev_loop* loop, ev_io *w, int revents) {
+static auto accept_cb(struct ev_loop* loop, ev_io *w, int revents) {
     auto listener = static_cast<TcpListener *>(w->data);
 
     if (revents & EV_READ) {
         auto [stream, peer_addr] = listener->accept();
         if (stream.is_valid()) {
             console.info("Accept connection from {}", peer_addr.to_string());
+
+            auto* stream_watcher = new ev_io;
+            auto* stream_ptr = new TcpStream(std::move(stream));  // 存储到堆上
+
+            stream_watcher->data = stream_ptr;
+            ev_io_init(stream_watcher, read_cb, stream_ptr->fd(), EV_READ);
+            ev_io_start(loop, stream_watcher);
         }
+
     } else if (revents & EV_ERROR) {
-        console.error("ERROR");
+        console.error("ACCEPT ERROR");
         ev_io_stop(loop, w);
     }
 }
