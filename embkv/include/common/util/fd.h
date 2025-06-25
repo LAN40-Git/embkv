@@ -7,6 +7,9 @@ class FD {
 public:
     explicit FD(int fd = -1)
         : fd_{fd} {}
+    ~FD() {
+        close();
+    }
 
     FD(const FD &) = delete;
     FD &operator=(const FD &) = delete;

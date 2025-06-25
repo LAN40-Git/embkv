@@ -19,7 +19,7 @@ static auto read_cb(struct ev_loop* loop, ev_io* w, int revents) {
         } else if (bytes_read == 0) {  // 客户端关闭连接
             console.info("Client disconnected");
             ev_io_stop(loop, w);
-            delete stream;  // 释放 TcpStream 对象
+            delete stream;
             delete w;       // 释放 ev_io 监视器
         }
     } else if (revents & EV_ERROR) {
@@ -36,7 +36,7 @@ static auto accept_cb(struct ev_loop* loop, ev_io *w, int revents) {
     if (revents & EV_READ) {
         auto [stream, peer_addr] = listener->accept();
         if (stream.is_valid()) {
-            console.info("Accept connection from {}", peer_addr.to_string());
+            console.info("Accept connection from {}-{}", peer_addr.to_string(), stream.fd());
 
             auto* stream_watcher = new ev_io;
             auto* stream_ptr = new TcpStream(std::move(stream));  // 存储到堆上
@@ -69,7 +69,7 @@ int main() {
 
     ev_io accept_watcher;
     accept_watcher.data = &listener;
-    ev_io_init(&accept_watcher, accept_cb, listener.fd(), EV_READ);
+    ev_io_init(&accept_watcher, accept_cb, listener.fd(), EV_READ | EV_WRITE);
     ev_io_start(loop, &accept_watcher);
     ev_run(loop, 0);
     return 0;

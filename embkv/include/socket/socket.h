@@ -11,6 +11,7 @@ public:
 public:
     auto bind(const net::SocketAddr& addr) const -> bool;
     auto listen(int maxn = SOMAXCONN) const -> bool;
+    auto shutdown(int how) const noexcept -> bool;
     auto set_reuseaddr(int option) const -> bool;
     auto set_nonblock(int option) const -> bool;
     auto set_nodelay(int option) const -> bool;

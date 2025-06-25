@@ -15,9 +15,7 @@ protected:
 public:
     auto close() noexcept { return inner_.close(); }
     auto fd() const noexcept { return inner_.fd(); }
-    auto is_valid() const noexcept {
-        return inner_.is_valid();
-    }
+    auto is_valid() const noexcept { return inner_.is_valid(); }
 
 public:
     static auto connect(const net::SocketAddr& addr) -> Stream {

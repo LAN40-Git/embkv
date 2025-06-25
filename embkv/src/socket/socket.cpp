@@ -14,6 +14,10 @@ auto embkv::socket::detail::Socket::listen(int maxn) const -> bool {
     return true;
 }
 
+auto embkv::socket::detail::Socket::shutdown(int how) const noexcept -> bool {
+    return ::shutdown(fd_, how) == 0;
+}
+
 auto embkv::socket::detail::Socket::set_reuseaddr(int option) const -> bool {
     return ::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option)) == 0;
 }

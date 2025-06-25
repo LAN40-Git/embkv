@@ -9,6 +9,7 @@ set(SOURCE_FILES
         embkv/src/raft/node.cpp
         embkv/src/raft/transport.cpp
         embkv/src/socket/socket.cpp
+        embkv/src/common/util/fd.cpp
 )
 
 # fmt
@@ -25,6 +26,7 @@ find_library(LIBEV_LIBRARY ev
 # protobuf
 find_package(Protobuf REQUIRED)
 protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ./rpc.proto)
+set_source_files_properties(${PROTO_HDRS} PROPERTIES GENERATED TRUE)
 
 if(LIBEV_INCLUDE_DIR AND LIBEV_LIBRARY)
     add_executable(main
