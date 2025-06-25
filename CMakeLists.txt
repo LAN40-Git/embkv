@@ -4,10 +4,13 @@ project(embkv)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+find_package(Boost 1.83.0 REQUIRED)
+
 set(SOURCE_FILES
         embkv/src/main.cpp
         embkv/src/raft/node.cpp
         embkv/src/raft/transport.cpp
+        embkv/src/raft/session_manager.cpp
         embkv/src/socket/socket.cpp
         embkv/src/common/util/fd.cpp
 )
@@ -36,11 +39,13 @@ if(LIBEV_INCLUDE_DIR AND LIBEV_LIBRARY)
     target_include_directories(main PRIVATE
             ${LIBEV_INCLUDE_DIR}
             ${PROTO_HDRS}
+            ${Boost_INCLUDE_DIRS}
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/embkv/include>
     )
     target_link_libraries(main PRIVATE
             ${LIBEV_LIBRARY}
             ${PROTOBUF_LIBRARIES}
+            ${Boost_LIBRARIES}
             fmt::fmt
     )
 else()

@@ -7,11 +7,11 @@ namespace embkv::raft
 {
 class Peer {
 public:
-    explicit Peer(uint64_t id, const std::string& name,
-                 const std::string& ip, uint16_t port) noexcept
+    explicit Peer(uint64_t id, std::string name,
+                 std::string ip, uint16_t port) noexcept
         : id_(id)
-        , name_(name)
-        , ip_(ip)
+        , name_(std::move(name))
+        , ip_(std::move(ip))
         , port_(port)
         , pipeline_(std::make_unique<Pipeline>()) {}
     Peer(const Peer&) = delete;

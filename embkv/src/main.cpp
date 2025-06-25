@@ -22,6 +22,8 @@ static auto read_cb(struct ev_loop* loop, ev_io* w, int revents) {
             delete stream;
             delete w;       // 释放 ev_io 监视器
         }
+    } else if (revents & EV_WRITE) {
+
     } else if (revents & EV_ERROR) {
         console.error("READ ERROR");
         ev_io_stop(loop, w);
@@ -39,8 +41,7 @@ static auto accept_cb(struct ev_loop* loop, ev_io *w, int revents) {
             console.info("Accept connection from {}-{}", peer_addr.to_string(), stream.fd());
 
             auto* stream_watcher = new ev_io;
-            auto* stream_ptr = new TcpStream(std::move(stream));  // 存储到堆上
-
+            auto* stream_ptr = new TcpStream(std::move(stream));
             stream_watcher->data = stream_ptr;
             ev_io_init(stream_watcher, read_cb, stream_ptr->fd(), EV_READ);
             ev_io_start(loop, stream_watcher);
@@ -55,7 +56,7 @@ static auto accept_cb(struct ev_loop* loop, ev_io *w, int revents) {
 int main() {
     std::error_code ec;
     SocketAddr addr{};
-    if (!SocketAddr::parse("127.0.0.1", 8080, addr, ec)) {
+    if (!SocketAddr::parse("127.0.0.1", 9090, addr, ec)) {
         console.error("{}", ec.message());
         return -1;
     }
