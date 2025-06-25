@@ -8,7 +8,7 @@
 #include <netdb.h>
 #include <memory>
 
-namespace embkv::net
+namespace embkv::socket::net
 {
 class Ipv4Addr {
 public:
@@ -83,11 +83,7 @@ public:
     }
 
     auto port() const -> uint16_t {
-        return ::ntohs(addr_.in6.sin6_port);
-    }
-
-    void set_port(uint16_t port) {
-        addr_.in6.sin6_port = ::htons(port);
+        return ::ntohs(addr_.in4.sin_port);
     }
 
     auto to_string() const -> std::string {
@@ -141,7 +137,6 @@ public:
 private:
     union {
         sockaddr_in  in4;
-        sockaddr_in6 in6;
     } addr_;
 };
 } // namespace embkv::net
