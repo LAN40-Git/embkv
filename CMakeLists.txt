@@ -14,6 +14,7 @@ set(SOURCE_FILES
         embkv/src/socket/socket.cpp
         embkv/src/common/util/fd.cpp
         embkv/src/raft/peer/pipeline.cpp
+        embkv/include/raft/config.h
 )
 
 # fmt

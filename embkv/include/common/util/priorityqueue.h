@@ -3,16 +3,21 @@
 
 namespace embkv::util
 {
+namespace detail
+{
+enum class Priority : uint8_t {
+    Critical = 0, // 心跳、选举消息
+    High = 1,     // 日志、快照消息
+    Medium = 2,   // 客户端消息
+    Low = 3,      // 后台管理消息
+    Count = 4,
+};
+} // namespace detail
+
 template <typename T>
 class PriorityQueue {
+    using Priority = detail::Priority;
 public:
-    enum class Priority : uint8_t {
-        Critical = 0, // 心跳、选举消息
-        High = 1,     // 日志、快照消息
-        Medium = 2,   // 客户端消息
-        Low = 3,      // 后台管理消息
-        Count = 4,
-    };
     constexpr static uint8_t MAX_PRIORITY = static_cast<uint8_t>(Priority::Count);
     using Queue = moodycamel::ConcurrentQueue<T>;
     std::array<Queue, MAX_PRIORITY> queues_;

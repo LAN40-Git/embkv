@@ -26,6 +26,7 @@ public:
     constexpr static uint32_t MAGIC = constexpr_htonl(0xCD54A23E); // 网络字节序
     constexpr static uint8_t VERSION = 1;
     using Buffer = std::array<uint8_t, 14>;
+    // never check the flags if it wasn't handshake
     enum class Flags : uint8_t {
         /* 节点类型标志 */
         kRaftNode = 0,

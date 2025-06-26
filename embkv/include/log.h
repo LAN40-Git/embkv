@@ -4,5 +4,7 @@
 
 namespace embkv::log
 {
-    auto& console = util::Singleton<ConsoleLogger>::instance();
+inline ConsoleLogger& console() {
+    return util::Singleton<ConsoleLogger>::instance();
 }
+} // namespace embkv::log

@@ -1,11 +1,13 @@
 #pragma once
-#include "boost/asio/thread_pool.hpp"
-#include <boost/asio/post.hpp>
+#include "raft/transport/head_manager.h"
+#include "log.h"
 #include "proto/rpc.pb.h"
 #include "common/util/fd.h"
 #include "common/util/priorityqueue.h"
 #include "socket/net/stream.h"
 #include <ev.h>
+#include <boost/asio/thread_pool.hpp>
+#include <boost/asio/post.hpp>
 
 namespace embkv::raft::detail
 {
@@ -20,7 +22,10 @@ public:
     void run(socket::net::TcpStream&& stream) noexcept;
     void stop() noexcept;
     auto is_running() const noexcept -> bool {
-        return is_running_;
+        return is_running_.load(std::memory_order_relaxed);
+    }
+    auto is_connecting() const noexcept -> bool {
+        return is_connecting_.load(std::memory_order_relaxed);
     }
 
 private:
@@ -31,9 +36,9 @@ private:
     socket::net::TcpStream stream_{socket::detail::Socket{-1}};
     std::atomic<bool>      is_running_{false};
     std::mutex             run_mutex_{};
-    bool                   is_connecting_{false};
+    std::atomic<bool>      is_connecting_{false};
     std::mutex             connect_mutex_{};
-    DeserQueue             rx_deser_queue_;
+    DeserQueue             deser_queue_;
     ev_io                  read_watcher_{0};
     ev_io                  write_watcher_{0};
 };

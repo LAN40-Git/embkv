@@ -4,6 +4,9 @@
 #include <mutex>
 #include <unordered_map>
 #include <utility>
+#include <boost/none.hpp>
+#include <boost/optional/optional.hpp>
+
 #include "transport/transport.h"
 
 namespace embkv::raft
@@ -13,17 +16,23 @@ namespace detail
 class RaftStatus {
 public:
     enum class Role { Follower, Candidate, Leader, Learner, Unknown};
-    explicit RaftStatus(uint64_t id) : id_(id) {};
+    explicit RaftStatus(uint64_t cluster_id, uint64_t node_id)
+        : cluster_id_(cluster_id), node_id_(node_id) {}
 
 public:
-    uint64_t                  id_{0};
+    void increase_term_to(uint64_t new_term);
+
+
+public:
+    uint64_t                  cluster_id_{0};
+    uint64_t                  node_id_{0};
     // 持久化状态
     uint64_t                  current_term_{0};
-    std::pair<uint64_t, bool> voted_for_{std::make_pair(0, false)};
+    boost::optional<uint64_t> voted_for_{boost::none};
 
     // 易失性状态
     Role                      role_{Role::Follower};
-    std::pair<uint64_t, bool> leader_id_{std::make_pair(0, false)};
+    boost::optional<uint64_t> leader_id_{boost::none};
     uint64_t                  commit_index{0};
     uint64_t                  last_applied_{0};
     uint64_t                  votes_{0};
@@ -38,6 +47,7 @@ public:
 } // detail
 
 class RaftNode {
+    using Priority = util::detail::Priority;
 public:
     struct ElectionData {
         RaftNode& node;
@@ -45,8 +55,14 @@ public:
         explicit ElectionData(RaftNode& n, uint64_t s) : node(n), start(s) {}
     };
 
-    explicit RaftNode(uint64_t id, const std::shared_ptr<Transport>& transport)
-        : st_(id), transport_(transport) {
+    struct HeartbeatData {
+        RaftNode& node;
+        explicit HeartbeatData(RaftNode& n) : node(n) {}
+    };
+
+    explicit RaftNode(const std::shared_ptr<Transport>& transport)
+        : st_(transport->cluster_id(), transport->node_id())
+        , transport_(transport) {
         ev_init(&election_watcher_, handle_election_timeout);
         ev_init(&heartbeat_watcher_, handle_heartbeat_timeout);
         loop_ = ev_loop_new(EVFLAG_AUTO);
@@ -60,18 +76,23 @@ public:
     }
 
 public:
+    // status
+    auto cluster_id() const noexcept -> uint64_t { return st_.cluster_id_; }
+    auto node_id() const noexcept -> uint64_t { return st_.node_id_; }
+    auto current_term() const noexcept -> uint64_t { return st_.current_term_; }
+    auto last_applied() const noexcept -> uint64_t { return st_.last_applied_; }
+    auto last_log_index() const noexcept -> uint64_t { return st_.last_log_index_; }
+    auto last_log_term() const noexcept -> uint64_t { return st_.last_log_term_; }
+
+public:
+    // timer func
     static void handle_election_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
     static void handle_heartbeat_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
 
 private:
-    static auto election_data() noexcept -> std::unordered_set<ElectionData*>;
-    static void add_election_data(ElectionData* data) noexcept;
-    static void remove_election_data(ElectionData* data) noexcept;
-
-
-private:
     void event_loop();
     void start_election();
+    void try_heartbeat() const;
 
 private:
     std::atomic<bool>          is_running_{false};

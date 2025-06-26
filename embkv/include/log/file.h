@@ -72,7 +72,4 @@ private:
     time_t                        last_roll_day_{0};
     time_t                        last_roll_second_{0};
 };
-
-constexpr std::size_t LogFile::SECONDS_PER_DAY;
-constexpr std::size_t LogFile::BUFFER_SIZE;
 } // namespace embkv::log::detail

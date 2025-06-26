@@ -11,39 +11,39 @@ message PersistentState {
 
 // ========== 主消息封装 ==========
 message Message {
-  uint64 node_id = 1;       // 发送方节点ID
-  uint64 timestamp = 2;     // 消息发送时间戳（毫秒）
+  uint64 cluster_id = 1;
+  uint64 node_id = 2;       // 发送方节点ID
 
   oneof content {
     // Raft核心协议
-    VoteRequest vote_request = 3;
-    VoteReply vote_reply = 4;
+    RequestVoteRequest request_vote_request = 3;
+    RequestVoteResponse request_vote_reply = 4;
     AppendEntriesRequest append_entries_request = 5;
-    AppendEntriesReply append_entries_reply = 6;
+    AppendEntriesResponse append_entries_reply = 6;
     InstallSnapshotRequest snapshot_request = 7;
-    InstallSnapshotReply snapshot_reply = 8;
+    InstallSnapshotResponse snapshot_reply = 8;
 
     // 客户端交互
     ClientRequest client_request = 9;
-    ClientReply client_reply = 10;
+    ClientResponse client_reply = 10;
   }
 }
 
 // ========== Raft核心结构 ==========
 
-message LogEntry {
+message EntryMeta {
   uint64 term = 1;
   uint64 index = 2;
   bytes client_request = 3;
 }
 
-message VoteRequest {
+message RequestVoteRequest {
   uint64 term = 1;
   uint64 last_log_index = 2;
   uint64 last_log_term = 3;
 }
 
-message VoteReply {
+message RequestVoteResponse {
   uint64 term = 1;
   bool granted = 2;
 }
@@ -52,12 +52,12 @@ message AppendEntriesRequest {
   uint64 term = 1;
   uint64 prev_log_index = 2;
   uint64 prev_log_term = 3;
-  repeated LogEntry entries = 4;
+  repeated EntryMeta entries = 4;
   uint64 leader_commit = 5;
   bool is_heartbeat = 6;
 }
 
-message AppendEntriesReply {
+message AppendEntriesResponse {
   uint64 term = 1;
   bool success = 2;
   uint64 conflict_index = 3;  // 用于日志快速恢复
@@ -70,7 +70,7 @@ message InstallSnapshotRequest {
   bytes snapshot_data = 3;  // 序列化的系统状态
 }
 
-message InstallSnapshotReply {
+message InstallSnapshotResponse {
   bool success = 1;
 }
 
@@ -80,7 +80,7 @@ message ClientRequest {
   bytes command = 2;       // 序列化的FileOperation
 }
 
-message ClientReply {
+message ClientResponse {
   uint64 request_id = 1;      // 必须回显客户端请求的ID
   uint64 leader_hint = 2;     // Leader节点ID提示（重定向用）
   bool success = 3;           // 整体成功/失败
