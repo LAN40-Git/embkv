@@ -9,6 +9,7 @@ class Transport {
     struct AcceptData {
         socket::net::TcpListener listener;
         Transport& transport;
+        ev_io io_watcher{};
         explicit AcceptData(socket::net::TcpListener&& l, Transport& t)
             : listener(std::move(l)), transport(t) {}
     };
@@ -22,11 +23,6 @@ class Transport {
 
         explicit HandshakeData(socket::net::TcpStream&& s, Transport& t, socket::net::SocketAddr addr)
             : stream(std::move(s)), transport(t), peer_addr(addr) {}
-
-        ~HandshakeData() {
-            ev_io_stop(transport.loop, &io_watcher);
-            ev_timer_stop(transport.loop, &timer_watcher);
-        }
     };
 public:
     using DeserQueue = util::PriorityQueue<std::unique_ptr<Message>>;
@@ -38,6 +34,7 @@ public:
         , sess_mgr_(std::move(peers)) {
         loop_ = EV_DEFAULT;
     }
+    ~Transport() noexcept { clear(); }
 
 public:
     void run() noexcept;
@@ -57,19 +54,26 @@ private:
     static void handle_handshake_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
 
 private:
-    void try_connect_to_peer(uint64_t id) noexcept;
-    void start_handshake(socket::net::TcpStream&& stream, socket::net::SocketAddr addr) noexcept;
+    void add_accept_data(AcceptData* data) noexcept;
+    void remove_accept_data(AcceptData* data) noexcept;
+    void add_handshake_data(HandshakeData* data) noexcept;
+    void remove_handshake_data(HandshakeData* data) noexcept;
 
 private:
-    detail::SessionManager        sess_mgr_;
-    std::atomic<bool>             is_running_{false};
-    std::mutex                    run_mutex_;
-    uint64_t                      id_;
-    std::string                   name_;
-    std::string                   ip_;
-    uint16_t                      port_;
-    struct ev_loop*               loop_{nullptr};
-    std::unordered_set<ev_io*>    io_watchers_;
-    std::unordered_set<ev_timer*> timer_watchers_;
+    void try_connect_to_peer(uint64_t id) noexcept;
+    void start_handshake(socket::net::TcpStream&& stream, socket::net::SocketAddr addr) noexcept;
+    void clear() noexcept;
+
+private:
+    detail::SessionManager             sess_mgr_;
+    std::atomic<bool>                  is_running_{false};
+    std::mutex                         run_mutex_;
+    uint64_t                           id_;
+    std::string                        name_;
+    std::string                        ip_;
+    uint16_t                           port_;
+    struct ev_loop*                    loop_{nullptr};
+    std::unordered_map<AcceptData*, std::unique_ptr<AcceptData>>       accept_data_;
+    std::unordered_map<HandshakeData*, std::unique_ptr<HandshakeData>> handshake_data_;
 };
 } // namespace embkv::raft

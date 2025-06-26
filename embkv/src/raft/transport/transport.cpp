@@ -1,5 +1,5 @@
-#include "../../../include/raft/transport/transport.h"
-#include "../../../include/raft/transport/head_manager.h"
+#include "raft/transport/transport.h"
+#include "raft/transport/head_manager.h"
 
 void embkv::raft::Transport::run() noexcept {
     std::lock_guard<std::mutex> lock(run_mutex_);
@@ -20,11 +20,11 @@ void embkv::raft::Transport::run() noexcept {
     }
 
     is_running_.store(true, std::memory_order_release);
-    auto fd = listener.fd();
-
-    accept_watcher_.data = new AcceptData{std::move(listener), *this};
-    ev_io_init(&accept_watcher_, accept_cb, fd, EV_READ);
-    ev_io_start(loop_, &accept_watcher_);
+    auto* ac_data = new AcceptData{std::move(listener), *this};
+    add_accept_data(ac_data);
+    ac_data->io_watcher.data = ac_data;
+    ev_io_init(&ac_data->io_watcher, accept_cb, ac_data->listener.fd(), EV_READ);
+    ev_io_start(loop_, &ac_data->io_watcher);
 }
 
 void embkv::raft::Transport::stop() noexcept {
@@ -33,17 +33,12 @@ void embkv::raft::Transport::stop() noexcept {
         return;
     }
     is_running_.store(false, std::memory_order_release);
-    // 停止接收连接
-    ev_io_stop(loop_, &accept_watcher_);
-    auto* ac_data = static_cast<AcceptData*>(accept_watcher_.data);
-    delete ac_data;
+    clear();
 }
 
 void embkv::raft::Transport::accept_cb(struct ev_loop* loop, struct ev_io* w, int revents) {
     auto* ac_data = static_cast<AcceptData*>(w->data);
     if (revents & EV_ERROR) {
-        // ev_io_stop(loop, w);
-        // delete data;
         // TODO: 记录并处理错误
         return;
     }
@@ -93,6 +88,24 @@ void embkv::raft::Transport::handle_handshake_timeout(struct ev_loop* loop, stru
     delete hs_data;
 }
 
+void embkv::raft::Transport::add_accept_data(AcceptData* data) noexcept {
+    std::unique_ptr<AcceptData> ptr(data);
+    accept_data_.emplace(data, std::move(ptr));
+}
+
+void embkv::raft::Transport::remove_accept_data(AcceptData* data) noexcept {
+    accept_data_.erase(data);
+}
+
+void embkv::raft::Transport::add_handshake_data(HandshakeData* data) noexcept {
+    std::unique_ptr<HandshakeData> ptr(data);
+    handshake_data_.emplace(data, std::move(ptr));
+}
+
+void embkv::raft::Transport::remove_handshake_data(HandshakeData* data) noexcept {
+    handshake_data_.erase(data);
+}
+
 void embkv::raft::Transport::try_connect_to_peer(uint64_t id) noexcept {
     auto peer = sess_mgr_.peer_at(id);
     if (!peer) {
@@ -121,6 +134,7 @@ void embkv::raft::Transport::try_connect_to_peer(uint64_t id) noexcept {
 
 void embkv::raft::Transport::start_handshake(socket::net::TcpStream&& stream, socket::net::SocketAddr addr) noexcept {
     auto* hs_data = new HandshakeData{std::move(stream), *this, addr};
+    add_handshake_data(hs_data);
     // 开始握手
     hs_data->io_watcher.data = hs_data;
     ev_io_init(&hs_data->io_watcher, handshake_cb, hs_data->stream.fd(), EV_READ);
@@ -130,4 +144,10 @@ void embkv::raft::Transport::start_handshake(socket::net::TcpStream&& stream, so
     hs_data->timer_watcher.data = hs_data;
     ev_timer_init(&hs_data->timer_watcher, handle_handshake_timeout, 3.0, 0.0);
     ev_timer_start(loop_, &hs_data->timer_watcher);
+}
+
+void embkv::raft::Transport::clear() noexcept {
+    ev_break(loop_, EVBREAK_ALL);
+    accept_data_.clear();
+    handshake_data_.clear();
 }

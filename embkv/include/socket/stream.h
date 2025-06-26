@@ -19,17 +19,17 @@ public:
 
 public:
     static auto connect(const net::SocketAddr& addr) -> Stream {
-        auto sock(Socket::create(addr.family(), SOCK_STREAM, 0));
+        auto sock(Socket::create(addr.family(), SOCK_STREAM | SOCK_NONBLOCK, 0));
 
         if (!sock.set_nonblock(1)) {
-            return Stream{-1};
+            return Stream{Socket{-1}};
         }
 
         auto ret = ::connect(sock.fd(), addr.sockaddr(), addr.length());
         if (ret == 0) {
-            return std::move(sock);
+            return Stream{std::move(sock)};
         }
-        return Stream{-1};
+        return Stream{Socket{-1}};
     }
 
 private:

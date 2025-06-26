@@ -9,8 +9,8 @@ find_package(Boost 1.83.0 REQUIRED COMPONENTS thread)
 set(SOURCE_FILES
         embkv/src/main.cpp
         embkv/src/raft/node.cpp
-        embkv/src/raft/transport.cpp
-        embkv/src/raft/session_manager.cpp
+        embkv/src/raft/transport/transport.cpp
+        embkv/src/raft/transport/session_manager.cpp
         embkv/src/socket/socket.cpp
         embkv/src/common/util/fd.cpp
         embkv/src/raft/peer/pipeline.cpp

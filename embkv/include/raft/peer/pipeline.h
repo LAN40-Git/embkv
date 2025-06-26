@@ -3,6 +3,7 @@
 #include "common/util/fd.h"
 #include "common/util/priorityqueue.h"
 #include "socket/net/stream.h"
+#include <ev.h>
 
 namespace embkv::raft::detail
 {
@@ -21,7 +22,8 @@ public:
     }
 
 private:
-
+    static void read_cb(struct ev_loop* loop, struct ev_io* w, int revents);
+    static void write_cb(struct ev_loop* loop, struct ev_io* w, int revents);
 
 private:
     socket::net::TcpStream stream_{socket::detail::Socket{-1}};
@@ -30,5 +32,7 @@ private:
     bool                   is_connecting_{false};
     std::mutex             connect_mutex_{};
     DeserQueue             rx_deser_queue_;
+    ev_io                  read_watcher_{0};
+    ev_io                  write_watcher_{0};
 };
 } // namespace embkv::raft::detail

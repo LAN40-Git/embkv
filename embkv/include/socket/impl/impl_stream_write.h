@@ -11,7 +11,7 @@ struct ImplStreamWrite {
     auto write_exact(const void* buf, size_t len) -> size_t {
         size_t total_write = 0;
         while (total_write < len) {
-            auto write_bytes = write(buf + total_write, len - total_write);
+            auto write_bytes = write(static_cast<const char*>(buf) + total_write, len - total_write);
             if (write_bytes <= 0) {
                 break;
             }

@@ -17,3 +17,11 @@ void embkv::raft::detail::Pipeline::stop() noexcept {
     is_running_.store(false, std::memory_order_release);
     stream_.close();
 }
+
+void embkv::raft::detail::Pipeline::read_cb(struct ev_loop* loop, struct ev_io* w, int revents) {
+
+}
+
+void embkv::raft::detail::Pipeline::write_cb(struct ev_loop* loop, struct ev_io* w, int revents) {
+
+}
