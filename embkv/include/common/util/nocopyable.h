@@ -2,13 +2,13 @@
 
 namespace embkv::util
 {
-class Noncopyable {
+class Nocopyable {
 public:
-    Noncopyable(const Noncopyable &) = delete;
-    Noncopyable &operator=(const Noncopyable &) = delete;
+    Nocopyable(const Nocopyable &) = delete;
+    Nocopyable &operator=(const Nocopyable &) = delete;
 
 protected:
-    Noncopyable() = default;
-    ~Noncopyable() noexcept = default;
+    Nocopyable() = default;
+    ~Nocopyable() noexcept = default;
 };
 } // namespace embkv::util

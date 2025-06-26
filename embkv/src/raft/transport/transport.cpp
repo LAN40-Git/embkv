@@ -135,14 +135,24 @@ void embkv::raft::Transport::try_connect_to_peer(uint64_t id) {
     if (!peer) {
         return;
     }
+    if (!peer->pipeline()->try_get_connect_mutex()) {
+        return;
+    }
+    if (peer->pipeline()->is_running()) {
+        peer->pipeline()->release_connect_mutex();
+        return;
+    }
+
     socket::net::SocketAddr addr{};
     std::error_code ec;
     if (!socket::net::SocketAddr::parse(peer->ip(), peer->port(), addr, ec)) {
+        peer->pipeline()->release_connect_mutex();
         return;
     }
 
     auto stream = socket::net::TcpStream::connect(addr);
     if (!stream.is_valid()) {
+        peer->pipeline()->release_connect_mutex();
         return;
     }
     // 发送握手消息
@@ -154,6 +164,7 @@ void embkv::raft::Transport::try_connect_to_peer(uint64_t id) {
         stream.write_exact(buffer.data(), buffer.size());
         peer->pipeline()->run(std::move(stream));
     }
+    peer->pipeline()->release_connect_mutex();
 }
 
 void embkv::raft::Transport::start_handshake(struct ev_loop* loop, socket::net::TcpStream&& stream, socket::net::SocketAddr addr) {

@@ -22,7 +22,7 @@ struct LogRecord {
 };
 
 template<typename LoggerType>
-class BaseLogger : public util::Noncopyable {
+class BaseLogger : public util::Nocopyable {
 public:
     BaseLogger() = default;
     ~BaseLogger() noexcept = default;
