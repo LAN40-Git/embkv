@@ -1,7 +1,6 @@
 #pragma once
-#include <ev.h>
 #include <utility>
-#include "raft/session_manager.h"
+#include "session_manager.h"
 #include "socket/net/listener.h"
 
 namespace embkv::raft
@@ -37,7 +36,7 @@ public:
         , ip_(std::move(ip))
         , port_(port)
         , sess_mgr_(std::move(peers)) {
-        loop = EV_DEFAULT;
+        loop_ = EV_DEFAULT;
     }
 
 public:
@@ -58,22 +57,19 @@ private:
     static void handle_handshake_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
 
 private:
+    void try_connect_to_peer(uint64_t id) noexcept;
     void start_handshake(socket::net::TcpStream&& stream, socket::net::SocketAddr addr) noexcept;
 
 private:
-    std::atomic<bool> is_running_{false};
-    std::mutex        run_mutex_;
-
-    // 本地节点信息
-    uint64_t id_;
-    std::string name_;
-    std::string ip_;
-    uint16_t port_;
-
-    // 会话管理
-    detail::SessionManager sess_mgr_;
-
-    struct ev_loop* loop{nullptr};
-    ev_io accept_watcher_{};
+    detail::SessionManager        sess_mgr_;
+    std::atomic<bool>             is_running_{false};
+    std::mutex                    run_mutex_;
+    uint64_t                      id_;
+    std::string                   name_;
+    std::string                   ip_;
+    uint16_t                      port_;
+    struct ev_loop*               loop_{nullptr};
+    std::unordered_set<ev_io*>    io_watchers_;
+    std::unordered_set<ev_timer*> timer_watchers_;
 };
 } // namespace embkv::raft

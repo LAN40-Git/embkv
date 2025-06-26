@@ -1,5 +1,5 @@
 #pragma once
-#include "peer/peer.h"
+#include "../peer/peer.h"
 #include <boost/thread/shared_mutex.hpp>
 
 namespace embkv::raft::detail

@@ -1,4 +1,4 @@
-#include "raft/session_manager.h"
+#include "../../../include/raft/transport/session_manager.h"
 
 auto embkv::raft::detail::SessionManager::peer_at(uint64_t id) -> Peer* {
     boost::shared_lock<boost::shared_mutex> lock(peers_mutex_);
