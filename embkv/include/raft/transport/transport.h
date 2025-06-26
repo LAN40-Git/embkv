@@ -55,31 +55,45 @@ public:
     auto session_manager() noexcept -> detail::SessionManager& { return sess_mgr_; }
 
 private:
+    // ====== callback ======
+    // 接收连接回调，当有客户端连接时触发此回调
     static void accept_cb(struct ev_loop* loop, struct ev_io* w, int revents);
+    // 握手回调，当对端发送握手消息时触发此回调
+    // 若握手成功则会启动对应的pipeline
     static void handshake_cb(struct ev_loop* loop, struct ev_io* w, int revents);
+    // 握手超时回调，当握手超时时触发此回调
     static void handle_handshake_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
 
 private:
-    static auto accept_data() noexcept -> std::unordered_map<AcceptData*, std::unique_ptr<AcceptData>>&;
-    static auto handshake_data() noexcept -> std::unordered_map<HandshakeData*, std::unique_ptr<HandshakeData>>&;
+    static auto accept_data() noexcept -> std::unordered_set<AcceptData*>&;
+    static auto handshake_data() noexcept -> std::unordered_set<HandshakeData*>&;
     static void add_accept_data(AcceptData* data) noexcept;
     static void remove_accept_data(AcceptData* data) noexcept;
     static void add_handshake_data(HandshakeData* data) noexcept;
     static void remove_handshake_data(HandshakeData* data) noexcept;
 
 private:
-    void accept_loop(struct ev_loop* loop) noexcept;
-    void try_connect_to_peer(uint64_t id) noexcept;
-    void start_handshake(struct ev_loop* loop, socket::net::TcpStream&& stream, socket::net::SocketAddr addr) noexcept;
+    // ====== loop ======
+    void accept_loop(struct ev_loop* loop);
 
 private:
-    detail::SessionManager sess_mgr_;
-    std::atomic<bool>      is_running_{false};
-    std::mutex             run_mutex_;
-    uint64_t               id_;
-    std::string            name_;
-    std::string            ip_;
-    uint16_t               port_;
-    std::unordered_map<struct ev_loop*, std::thread> works_;
+    void try_connect_to_peer(uint64_t id);
+    void start_handshake(struct ev_loop* loop, socket::net::TcpStream&& stream, socket::net::SocketAddr addr);
+
+private:
+    detail::SessionManager   sess_mgr_;
+    std::atomic<bool>        is_running_{false};
+    std::mutex               run_mutex_;
+    uint64_t                 id_;
+    std::string              name_;
+    std::string              ip_;
+    uint16_t                 port_;
+    boost::asio::thread_pool pool_{4};
+    std::unordered_set<struct ev_loop*> loops_;
+
+    // ====== 消息缓冲 ======
+    DeserQueue free_deser_queue_;
+    DeserQueue to_raftnode_deser_queue_; // 存放Pipeline接收的消息
+    DeserQueue to_pipeline_deser_queue_; // 存放RaftNode生产的（广播）消息
 };
 } // namespace embkv::raft

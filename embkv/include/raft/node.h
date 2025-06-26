@@ -15,7 +15,7 @@ public:
     enum class Role { Follower, Candidate, Leader, Learner, Unknown};
     explicit RaftStatus(uint64_t id) : id_(id) {};
 
-private:
+public:
     uint64_t                  id_{0};
     // 持久化状态
     uint64_t                  current_term_{0};
@@ -39,10 +39,17 @@ private:
 
 class RaftNode {
 public:
-    explicit RaftNode(uint64_t id, struct ev_loop* loop = EV_DEFAULT)
-        : st_(id), loop_(loop) {
+    struct ElectionData {
+        RaftNode& node;
+        uint64_t  start{0};
+        explicit ElectionData(RaftNode& n, uint64_t s) : node(n), start(s) {}
+    };
+
+    explicit RaftNode(uint64_t id, const std::shared_ptr<Transport>& transport)
+        : st_(id), transport_(transport) {
         ev_init(&election_watcher_, handle_election_timeout);
         ev_init(&heartbeat_watcher_, handle_heartbeat_timeout);
+        loop_ = ev_loop_new(EVFLAG_AUTO);
     }
 
 public:
@@ -57,14 +64,23 @@ public:
     static void handle_heartbeat_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
 
 private:
-    // 运行状态
-    std::atomic<bool>  is_running_{false};
-    std::mutex         run_mutex_;
-    detail::RaftStatus st_;
-    // 定时器
-    struct ev_timer election_watcher_{};
-    struct ev_timer heartbeat_watcher_{};
-    // ev 事件循环
-    struct ev_loop* loop_{nullptr};
+    static auto election_data() noexcept -> std::unordered_set<ElectionData*>;
+    static void add_election_data(ElectionData* data) noexcept;
+    static void remove_election_data(ElectionData* data) noexcept;
+
+
+private:
+    void event_loop();
+    void start_election();
+
+private:
+    std::atomic<bool>          is_running_{false};
+    std::mutex                 run_mutex_;
+    detail::RaftStatus         st_;
+    std::shared_ptr<Transport> transport_;
+    boost::asio::thread_pool   pool_{1};
+    struct ev_timer            election_watcher_{};
+    struct ev_timer            heartbeat_watcher_{};
+    struct ev_loop*            loop_{nullptr};
 };
-}
+} // namespace embkv::raft

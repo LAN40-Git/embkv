@@ -8,10 +8,11 @@ void embkv::raft::Transport::run() noexcept {
     }
     is_running_.store(true, std::memory_order_release);
     // 监听循环
-    struct ev_loop* ac_loop = ev_loop_new(EVFLAG_AUTO);
-    works_.emplace(ac_loop, std::thread([this, ac_loop] {
-        this->accept_loop(ac_loop);
-    }));
+    boost::asio::post(pool_, [this]() {
+        struct ev_loop* ac_loop = ev_loop_new(EVFLAG_AUTO);
+        loops_.emplace(ac_loop);
+        accept_loop(ac_loop);
+    });
 }
 
 void embkv::raft::Transport::stop() noexcept {
@@ -20,13 +21,11 @@ void embkv::raft::Transport::stop() noexcept {
         return;
     }
     is_running_.store(false, std::memory_order_release);
-    for (auto& work : works_) {
-        ev_break(work.first, EVBREAK_ALL);
-        if (work.second.joinable()) {
-            work.second.join();
-        }
+    for (auto& loop : loops_) {
+        ev_break(loop, EVBREAK_ALL);
     }
-    works_.clear();
+    pool_.wait();
+    loops_.clear();
 }
 
 void embkv::raft::Transport::accept_cb(struct ev_loop* loop, struct ev_io* w, int revents) {
@@ -49,12 +48,8 @@ void embkv::raft::Transport::accept_cb(struct ev_loop* loop, struct ev_io* w, in
 }
 
 void embkv::raft::Transport::handshake_cb(struct ev_loop* loop, struct ev_io* w, int revents) {
-    auto it = handshake_data().find(static_cast<HandshakeData*>(w->data));
-    if (it == handshake_data().end()) {
-        return;
-    }
-    auto hs_data = std::move(it->second); // 接管智能指针
-    remove_handshake_data(it->first);
+    auto hs_data = static_cast<HandshakeData*>(w->data);
+    handshake_data().erase(hs_data);
     if (revents & EV_ERROR) {
         return;
     }
@@ -84,20 +79,19 @@ void embkv::raft::Transport::handle_handshake_timeout(struct ev_loop* loop, stru
 }
 
 auto embkv::raft::Transport::accept_data() noexcept
--> std::unordered_map<AcceptData*, std::unique_ptr<AcceptData>>& {
-    thread_local std::unordered_map<AcceptData*, std::unique_ptr<AcceptData>> data;
+-> std::unordered_set<AcceptData*>& {
+    thread_local std::unordered_set<AcceptData*> data;
     return data;
 }
 
 auto embkv::raft::Transport::handshake_data() noexcept
--> std::unordered_map<HandshakeData*, std::unique_ptr<HandshakeData>>& {
-    thread_local std::unordered_map<HandshakeData*, std::unique_ptr<HandshakeData>> data;
+-> std::unordered_set<HandshakeData*>& {
+    thread_local std::unordered_set<HandshakeData*> data;
     return data;
 }
 
 void embkv::raft::Transport::add_accept_data(AcceptData* data) noexcept {
-    std::unique_ptr<AcceptData> ptr(data);
-    accept_data().emplace(data, std::move(ptr));
+    accept_data().emplace(data);
 }
 
 void embkv::raft::Transport::remove_accept_data(AcceptData* data) noexcept {
@@ -105,15 +99,14 @@ void embkv::raft::Transport::remove_accept_data(AcceptData* data) noexcept {
 }
 
 void embkv::raft::Transport::add_handshake_data(HandshakeData* data) noexcept {
-    std::unique_ptr<HandshakeData> ptr(data);
-    handshake_data().emplace(data, std::move(ptr));
+    handshake_data().emplace(data);
 }
 
 void embkv::raft::Transport::remove_handshake_data(HandshakeData* data) noexcept {
     handshake_data().erase(data);
 }
 
-void embkv::raft::Transport::accept_loop(struct ev_loop* loop) noexcept {
+void embkv::raft::Transport::accept_loop(struct ev_loop* loop) {
     socket::net::SocketAddr addr{};
     std::error_code ec;
     if (!socket::net::SocketAddr::parse("0.0.0.0", 8080, addr, ec)) {
@@ -133,7 +126,7 @@ void embkv::raft::Transport::accept_loop(struct ev_loop* loop) noexcept {
     ev_run(loop, 0);
 }
 
-void embkv::raft::Transport::try_connect_to_peer(uint64_t id) noexcept {
+void embkv::raft::Transport::try_connect_to_peer(uint64_t id) {
     auto peer = sess_mgr_.peer_at(id);
     if (!peer) {
         return;
@@ -159,9 +152,10 @@ void embkv::raft::Transport::try_connect_to_peer(uint64_t id) noexcept {
     }
 }
 
-void embkv::raft::Transport::start_handshake(struct ev_loop* loop, socket::net::TcpStream&& stream, socket::net::SocketAddr addr) noexcept {
+void embkv::raft::Transport::start_handshake(struct ev_loop* loop, socket::net::TcpStream&& stream, socket::net::SocketAddr addr) {
     auto* hs_data = new HandshakeData{std::move(stream), *this, addr};
     add_handshake_data(hs_data);
+    hs_data->loop = loop;
     // 开始握手
     hs_data->io_watcher.data = hs_data;
     ev_io_init(&hs_data->io_watcher, handshake_cb, hs_data->stream.fd(), EV_READ);

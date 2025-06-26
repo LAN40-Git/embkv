@@ -1,4 +1,6 @@
 #pragma once
+#include "boost/asio/thread_pool.hpp"
+#include <boost/asio/post.hpp>
 #include "proto/rpc.pb.h"
 #include "common/util/fd.h"
 #include "common/util/priorityqueue.h"
