@@ -10,8 +10,12 @@ class Transport {
         socket::net::TcpListener listener;
         Transport& transport;
         ev_io io_watcher{};
+        struct ev_loop* loop{nullptr};
         explicit AcceptData(socket::net::TcpListener&& l, Transport& t)
             : listener(std::move(l)), transport(t) {}
+        ~AcceptData() {
+            ev_io_stop(loop, &io_watcher);
+        }
     };
 
     struct HandshakeData {
@@ -19,10 +23,15 @@ class Transport {
         Transport& transport;
         ev_io io_watcher{};
         ev_timer timer_watcher{};
+        struct ev_loop* loop{nullptr};
         socket::net::SocketAddr peer_addr;
 
         explicit HandshakeData(socket::net::TcpStream&& s, Transport& t, socket::net::SocketAddr addr)
             : stream(std::move(s)), transport(t), peer_addr(addr) {}
+        ~HandshakeData() {
+            ev_io_stop(loop, &io_watcher);
+            ev_timer_stop(loop, &timer_watcher);
+        }
     };
 public:
     using DeserQueue = util::PriorityQueue<std::unique_ptr<Message>>;
@@ -31,10 +40,7 @@ public:
         , name_(std::move(name))
         , ip_(std::move(ip))
         , port_(port)
-        , sess_mgr_(std::move(peers)) {
-        loop_ = EV_DEFAULT;
-    }
-    ~Transport() noexcept { clear(); }
+        , sess_mgr_(std::move(peers)) {}
 
 public:
     void run() noexcept;
@@ -54,26 +60,26 @@ private:
     static void handle_handshake_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
 
 private:
-    void add_accept_data(AcceptData* data) noexcept;
-    void remove_accept_data(AcceptData* data) noexcept;
-    void add_handshake_data(HandshakeData* data) noexcept;
-    void remove_handshake_data(HandshakeData* data) noexcept;
+    static auto accept_data() noexcept -> std::unordered_map<AcceptData*, std::unique_ptr<AcceptData>>&;
+    static auto handshake_data() noexcept -> std::unordered_map<HandshakeData*, std::unique_ptr<HandshakeData>>&;
+    static void add_accept_data(AcceptData* data) noexcept;
+    static void remove_accept_data(AcceptData* data) noexcept;
+    static void add_handshake_data(HandshakeData* data) noexcept;
+    static void remove_handshake_data(HandshakeData* data) noexcept;
 
 private:
+    void accept_loop(struct ev_loop* loop) noexcept;
     void try_connect_to_peer(uint64_t id) noexcept;
-    void start_handshake(socket::net::TcpStream&& stream, socket::net::SocketAddr addr) noexcept;
-    void clear() noexcept;
+    void start_handshake(struct ev_loop* loop, socket::net::TcpStream&& stream, socket::net::SocketAddr addr) noexcept;
 
 private:
-    detail::SessionManager             sess_mgr_;
-    std::atomic<bool>                  is_running_{false};
-    std::mutex                         run_mutex_;
-    uint64_t                           id_;
-    std::string                        name_;
-    std::string                        ip_;
-    uint16_t                           port_;
-    struct ev_loop*                    loop_{nullptr};
-    std::unordered_map<AcceptData*, std::unique_ptr<AcceptData>>       accept_data_;
-    std::unordered_map<HandshakeData*, std::unique_ptr<HandshakeData>> handshake_data_;
+    detail::SessionManager sess_mgr_;
+    std::atomic<bool>      is_running_{false};
+    std::mutex             run_mutex_;
+    uint64_t               id_;
+    std::string            name_;
+    std::string            ip_;
+    uint16_t               port_;
+    std::unordered_map<struct ev_loop*, std::thread> works_;
 };
 } // namespace embkv::raft
