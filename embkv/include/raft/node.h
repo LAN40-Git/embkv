@@ -104,7 +104,6 @@ private:
     detail::RaftStatus         st_;
     std::shared_ptr<Transport> transport_;
     boost::asio::thread_pool   pool_{1};
-    FreeQueue                  free_deser_queue_;
     struct ev_timer            election_watcher_{};
     struct ev_timer            heartbeat_watcher_{};
     struct ev_loop*            loop_{nullptr};

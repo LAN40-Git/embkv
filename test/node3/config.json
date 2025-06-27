@@ -1,7 +1,7 @@
 {
     "cluster_id": 0,
-    "ip": "0.0.0.0",
+    "ip": "127.0.0.1",
     "node_id": 2,
     "node_name": "Node3",
-    "port": 8082
+    "port": 8083
 }

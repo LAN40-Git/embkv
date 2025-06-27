@@ -11,7 +11,7 @@ public:
     uint64_t    cluster_id{0};
     uint64_t    node_id{0};
     std::string node_name{"Default_Node"};
-    std::string ip{"0.0.0.0"};
+    std::string ip{"127.0.0.1"};
     uint16_t    port{8080};
 
     // 从文件加载配置

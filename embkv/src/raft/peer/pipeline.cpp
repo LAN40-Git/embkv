@@ -17,9 +17,7 @@ void embkv::raft::detail::Pipeline::stop() noexcept {
     if (is_running_.load(std::memory_order_acquire)) {
         return;
     }
-    is_running_.store(false, std::memory_order_release);
     stream_.close();
-    ev_break(loop_, EVBREAK_ALL);
     pool_.wait();
 }
 
@@ -27,53 +25,50 @@ void embkv::raft::detail::Pipeline::read_cb(struct ev_loop* loop, struct ev_io* 
     thread_local char read_buf_[10 * 1024]; // 10kb 缓冲区，过滤长度大于此缓冲的消息
     auto* rd_data = static_cast<ReadData*>(w->data);
     auto& stream = rd_data->pipeline.stream_;
-    auto& free_deser_queue = rd_data->pipeline.free_deser_queue_;
     auto& to_deser_queue = rd_data->pipeline.to_deser_queue_;
 
     if (revents & EV_READ) {
         // 接收头部
         auto& buffer = HeadManager::buffer();
-        stream.read_exact(buffer.data(), buffer.size());
+        auto size = stream.read_exact(buffer.data(), buffer.size());
+        if (size < sizeof(HeadManager::Header)) {
+            ev_break(loop, EVBREAK_ALL);
+            return;
+        }
         auto header = HeadManager::deserialize();
-        if (!header.has_value()) {
-            return;
-        }
-        // 接收消息体
-        auto length = header.value().length;
-        if (length > sizeof(read_buf_)) {
-            log::console().error("Received too many bytes while reading.");
-            return;
-        }
-        // TODO: 使用缓冲区池优化
-        stream.read_exact(read_buf_, length);
+        if (header.has_value()) {
+            // 接收消息体
+            auto length = header.value().length;
+            if (length > sizeof(read_buf_)) {
+                log::console().error("Received too many bytes while reading.");
+                ev_break(loop, EVBREAK_ALL);
+                return;
+            }
+            // TODO: 使用缓冲区池优化
+            size = stream.read_exact(read_buf_, length);
 
-        std::unique_ptr<Message> msg;
-        if (free_deser_queue.try_dequeue(msg)) {
-            msg->Clear();
-        } else {
-            msg = std::make_unique<Message>();
-        }
+            Message msg;
+            if (!msg.ParseFromArray(read_buf_, size)) {
+                log::console().error("Failed to parse message.");
+            }
 
-        if (!msg->ParseFromArray(read_buf_, length)) {
-            log::console().error("Failed to parse message.");
-        }
-
-        switch (msg->content_case()) {
-            case Message::kRequestVoteRequest:
-            case Message::kRequestVoteResponse:
-                to_deser_queue.enqueue(std::move(msg), Priority::Critical);
-                break;
-            case Message::kAppendEntriesRequest:
-            case Message::kAppendEntriesResponse:
-            case Message::kSnapshotRequest:
-            case Message::kSnapshotResponse:
-                to_deser_queue.enqueue(std::move(msg), Priority::High);
-                break;
-            case Message::kClientRequest:
-            case Message::kClientResponse:
-                to_deser_queue.enqueue(std::move(msg), Priority::Medium);
-                break;
-            default: break;
+            switch (msg.content_case()) {
+                case Message::kRequestVoteRequest:
+                case Message::kRequestVoteResponse:
+                    to_deser_queue.enqueue(std::move(msg), Priority::Critical);
+                    break;
+                case Message::kAppendEntriesRequest:
+                case Message::kAppendEntriesResponse:
+                case Message::kSnapshotRequest:
+                case Message::kSnapshotResponse:
+                    to_deser_queue.enqueue(std::move(msg), Priority::High);
+                    break;
+                case Message::kClientRequest:
+                case Message::kClientResponse:
+                    to_deser_queue.enqueue(std::move(msg), Priority::Medium);
+                    break;
+                default: break;
+            }
         }
 
         return;
@@ -93,7 +88,14 @@ void embkv::raft::detail::Pipeline::handle_write_timeout(struct ev_loop* loop, s
     if (revents & EV_TIMEOUT) {
         auto count = from_ser_queue.try_dequeue_bulk(buf.data(), buf.size());
         for (auto i = 0; i < count; ++i) {
-            stream.write_exact(buf[i]->data(), buf[i]->size());
+            HeadManager::Header header{
+                .length = htobe64(buf[i]->size())
+            };
+            if (HeadManager::serialize(header)) {
+                auto& buffer = HeadManager::buffer();
+                stream.write_exact(buffer.data(), buffer.size());
+                stream.write_exact(buf[i]->data(), buf[i]->size());
+            }
         }
         return;
     }
@@ -110,17 +112,20 @@ void embkv::raft::detail::Pipeline::event_loop() noexcept {
     }
     auto* rd_data = new ReadData(*this);
     auto* wr_data = new WriteData(*this);
+    struct ev_loop* loop = ev_loop_new(EVFLAG_AUTO);
     ev_io read_watcher{};
     ev_timer write_watcher{};
     read_watcher.data = rd_data;
     write_watcher.data = wr_data;
     ev_io_init(&read_watcher, read_cb, stream_.fd(), EV_READ);
-    ev_timer_init(&write_watcher, handle_write_timeout, 0, 0.001);
-    ev_io_start(loop_, &read_watcher);
-    ev_timer_start(loop_, &write_watcher);
-    ev_run(loop_, 0);
-    ev_io_stop(loop_, &read_watcher);
-    ev_timer_stop(loop_, &write_watcher);
+    ev_timer_init(&write_watcher, handle_write_timeout, 0, 0.003);
+    ev_io_start(loop, &read_watcher);
+    ev_timer_start(loop, &write_watcher);
+    ev_run(loop, 0);
+    ev_io_stop(loop, &read_watcher);
+    ev_timer_stop(loop, &write_watcher);
     delete rd_data;
     delete wr_data;
+    stream_.close();
+    is_running_.store(false, std::memory_order_release);
 }

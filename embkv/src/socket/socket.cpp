@@ -1,5 +1,7 @@
 #include "socket/socket.h"
 
+#include <netinet/tcp.h>
+
 auto embkv::socket::detail::Socket::bind(const net::SocketAddr& addr) const -> bool {
     if (::bind(fd_, addr.sockaddr(), addr.length()) != 0) {
         return false;
@@ -27,7 +29,7 @@ auto embkv::socket::detail::Socket::set_nonblock(int option) const -> bool {
 }
 
 auto embkv::socket::detail::Socket::set_nodelay(int option) const -> bool {
-    return ::setsockopt(fd_, SOL_SOCKET, SOCK_NONBLOCK, &option, sizeof(option)) == 0;
+    return ::setsockopt(fd_, SOL_SOCKET, TCP_NODELAY, &option, sizeof(option)) == 0;
 }
 
 auto embkv::socket::detail::Socket::set_keepalive(int option) const -> bool {

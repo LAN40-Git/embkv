@@ -42,7 +42,7 @@ public:
         uint32_t magic{MAGIC}; // 网络字节序
         uint8_t version{VERSION};
         Flags flags{Flags::kNone};
-        uint64_t length{0}; // 主机字节序
+        uint64_t length{0};
         bool is_valid() const noexcept {
             return magic == MAGIC && version == VERSION;
         }

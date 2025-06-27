@@ -24,17 +24,11 @@ class Pipeline : util::Nocopyable {
     };
 public:
     using SerQueue = moodycamel::ConcurrentQueue<std::shared_ptr<std::string>>;
-    using DeserQueue = util::PriorityQueue<std::unique_ptr<Message>>;
-    using FreeQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Message>>;
+    using DeserQueue = util::PriorityQueue<Message>;
     using Priority = util::detail::Priority;
-    Pipeline() {
-        loop_ = ev_loop_new(EVFLAG_AUTO);
-    }
+    Pipeline() = default;
 
-    ~Pipeline() noexcept {
-        stop();
-        ev_loop_destroy(loop_);
-    }
+    ~Pipeline() noexcept { stop(); }
     Pipeline(Pipeline &&) = delete;
     Pipeline &operator=(Pipeline &&) = delete;
 
@@ -71,8 +65,6 @@ private:
     std::mutex               connect_mutex_{};
     SerQueue                 from_ser_queue_;
     DeserQueue               to_deser_queue_;
-    FreeQueue                free_deser_queue_;
-    struct ev_loop*          loop_;
     boost::asio::thread_pool pool_{1};
 };
 } // namespace embkv::raft::detail

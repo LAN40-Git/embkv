@@ -46,8 +46,7 @@ class Transport {
     };
 
 public:
-    using DeserQueue = util::PriorityQueue<std::unique_ptr<Message>>;
-    using FreeQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Message>>;
+    using DeserQueue = util::PriorityQueue<Message>;
     explicit Transport(detail::SessionManager::PeerMap&& peers)
         : config_(Config::load()), sess_mgr_(std::move(peers)) {}
 
@@ -96,7 +95,6 @@ private:
     std::unordered_set<struct ev_loop*> loops_;
 
     // ====== 消息缓冲 ======
-    FreeQueue  free_deser_queue_;
     DeserQueue to_raftnode_deser_queue_; // 存放Pipeline接收的消息
     DeserQueue to_pipeline_deser_queue_; // 存放RaftNode生产的（广播）消息
 };

@@ -59,15 +59,20 @@ void embkv::raft::Transport::handshake_cb(struct ev_loop* loop, struct ev_io* w,
         log::console().error("handshake_cb error : {}", strerror(errno));
     } else if (revents & EV_READ) {
         auto& buffer = detail::HeadManager::buffer();
-        hs_data->stream.read_exact(buffer.data(), buffer.size());
-
+        auto size = hs_data->stream.read_exact(buffer.data(), buffer.size());
+        if (size < sizeof(detail::HeadManager::Header)) {
+            delete hs_data;
+            return;
+        }
         if (auto header = detail::HeadManager::deserialize()) {
-            if (!header.has_value() || !header.value().is_valid()) { // 头部无效，握手失败
+            if (!header.has_value()) { // 头部无效，握手失败
+                delete hs_data;
                 return;
             }
 
-            auto peer = hs_data->transport.session_manager().peer_at(header.value().length);
+            auto peer = hs_data->transport.session_manager().peer_at(be64toh(header.value().length));
             if (!peer) {
+                delete hs_data;
                 return;
             }
             // 启动通信
@@ -86,7 +91,7 @@ void embkv::raft::Transport::handle_handshake_timeout(struct ev_loop* loop, stru
 }
 
 void embkv::raft::Transport::handle_serialize_timeout(struct ev_loop* loop, struct ev_timer* w, int revents) {
-    thread_local std::array<std::unique_ptr<Message>, 64> deser_buf;
+    thread_local std::array<Message, 64> deser_buf;
     auto* ser_data = static_cast<SerializeData*>(w->data);
     auto& transport = ser_data->transport;
     auto& peers = transport.session_manager().peers();
@@ -96,19 +101,7 @@ void embkv::raft::Transport::handle_serialize_timeout(struct ev_loop* loop, stru
         auto count = queue.try_dequeue_bulk(deser_buf.data(), deser_buf.size());
         std::array<std::shared_ptr<std::string>, 64> ser_buf;
         for (auto i = 0; i < count; ++i) {
-            const auto& msg = *deser_buf[i];
-            size_t body_size = msg.ByteSizeLong();
-            size_t total_size = sizeof(detail::HeadManager::Header) + body_size;
-
-            ser_buf[i] = std::make_shared<std::string>();
-            ser_buf[i]->resize(total_size);
-
-            detail::HeadManager::Header header;
-            header.flags = detail::HeadManager::Flags::kRaftNode;
-            header.length = total_size;
-            memcpy(const_cast<char*>(ser_buf[i]->data()), &header, sizeof(header));
-
-            msg.SerializeToArray(const_cast<char*>(ser_buf[i]->data() + sizeof(header)), body_size);
+            ser_buf[i] = std::make_shared<std::string>(deser_buf[i].SerializeAsString());
         }
         if (count > 0) {
             // 广播消息到活跃pipeline，同时尝试连接id大于自己且非活跃的pipeline
@@ -130,7 +123,7 @@ void embkv::raft::Transport::handle_serialize_timeout(struct ev_loop* loop, stru
 }
 
 void embkv::raft::Transport::handle_receive_timeout(struct ev_loop* loop, struct ev_timer* w, int revents) {
-    thread_local std::array<std::unique_ptr<Message>, 64> deser_buf;
+    thread_local std::array<Message, 64> deser_buf;
     auto* recv_data = static_cast<ReceiveData*>(w->data);
     auto& transport = recv_data->transport;
     auto& sess_mgr = transport.session_manager();
@@ -173,7 +166,7 @@ void embkv::raft::Transport::accept_loop() {
 
     auto listener = socket::net::TcpListener::bind(addr);
     if (!listener.is_valid()) {
-        log::console().error("Failed to bind listener");
+        log::console().error("Failed to bind {}:{} {}", config_.ip, config_.port, strerror(errno));
         return;
     }
     struct ev_loop* ac_loop = ev_loop_new(EVFLAG_AUTO);
@@ -227,10 +220,7 @@ void embkv::raft::Transport::receive_loop() {
 
 void embkv::raft::Transport::try_connect_to_peer(uint64_t id) {
     auto peer = sess_mgr_.peer_at(id);
-    if (!peer) {
-        return;
-    }
-    if (!peer->pipeline()->try_get_connect_mutex()) {
+    if (!peer || !peer->pipeline()->try_get_connect_mutex()) {
         return;
     }
     if (peer->pipeline()->is_running()) {
@@ -247,19 +237,18 @@ void embkv::raft::Transport::try_connect_to_peer(uint64_t id) {
     }
 
     auto stream = socket::net::TcpStream::connect(addr);
-    if (!stream.is_valid()) {
-        peer->pipeline()->release_connect_mutex();
-        return;
-    }
-    // 发送握手消息
-    detail::HeadManager::Header header;
-    header.flags = detail::HeadManager::Flags::kRaftNode;
-    header.length = config_.node_id;
-    if (detail::HeadManager::serialize(header)) {
-        auto& buffer = detail::HeadManager::buffer();
-        stream.write_exact(buffer.data(), buffer.size());
-        peer->pipeline()->run(std::move(stream));
-        log::console().info("Connect to {}", id);
+    if (stream.is_valid()) {
+        // 发送握手消息
+        detail::HeadManager::Header header {
+            .flags = detail::HeadManager::Flags::kRaftNode,
+            .length = htobe64(config_.node_id)
+        };
+        if (detail::HeadManager::serialize(header)) {
+            auto& buffer = detail::HeadManager::buffer();
+            stream.write_exact(buffer.data(), buffer.size());
+            peer->pipeline()->run(std::move(stream));
+            log::console().info("Connect to {}", id);
+        }
     }
     peer->pipeline()->release_connect_mutex();
 }
