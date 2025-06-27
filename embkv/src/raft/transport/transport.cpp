@@ -14,6 +14,10 @@ void embkv::raft::Transport::run() noexcept {
     boost::asio::post(pool_, [this]() {
         serialize_loop();
     });
+    // 接收消息循环
+    boost::asio::post(pool_, [this]() {
+        receive_loop();
+    });
 }
 
 void embkv::raft::Transport::stop() noexcept {
@@ -68,6 +72,7 @@ void embkv::raft::Transport::handshake_cb(struct ev_loop* loop, struct ev_io* w,
             }
             // 启动通信
             peer->pipeline()->run(std::move(hs_data->stream));
+            log::console().info("Connect to {}", peer->node_id());
         }
     }
     delete hs_data;
@@ -77,6 +82,7 @@ void embkv::raft::Transport::handle_handshake_timeout(struct ev_loop* loop, stru
     auto* hs_data = static_cast<HandshakeData*>(w->data);
     handshake_data().erase(hs_data);
     delete hs_data;
+    log::console().info("Handshake timeout");
 }
 
 void embkv::raft::Transport::handle_serialize_timeout(struct ev_loop* loop, struct ev_timer* w, int revents) {
@@ -104,13 +110,15 @@ void embkv::raft::Transport::handle_serialize_timeout(struct ev_loop* loop, stru
 
             msg.SerializeToArray(const_cast<char*>(ser_buf[i]->data() + sizeof(header)), body_size);
         }
-        // 广播消息到活跃pipeline，同时尝试连接id大于自己且非活跃的pipeline
-        for (auto& peer : peers) {
-            auto pipeline = peer.second->pipeline();
-            if (pipeline->is_running()) {
-                pipeline->from_ser_queue().enqueue_bulk(ser_buf.data(), count);
-            } else if (peer.first > transport.node_id()) {
-                transport.try_connect_to_peer(peer.first);
+        if (count > 0) {
+            // 广播消息到活跃pipeline，同时尝试连接id大于自己且非活跃的pipeline
+            for (auto& peer : peers) {
+                auto pipeline = peer.second->pipeline();
+                if (pipeline->is_running()) {
+                    pipeline->from_ser_queue().enqueue_bulk(ser_buf.data(), count);
+                } else if (peer.first > transport.node_id()) {
+                    transport.try_connect_to_peer(peer.first);
+                }
             }
         }
         return;
@@ -121,9 +129,37 @@ void embkv::raft::Transport::handle_serialize_timeout(struct ev_loop* loop, stru
     }
 }
 
+void embkv::raft::Transport::handle_receive_timeout(struct ev_loop* loop, struct ev_timer* w, int revents) {
+    thread_local std::array<std::unique_ptr<Message>, 64> deser_buf;
+    auto* recv_data = static_cast<ReceiveData*>(w->data);
+    auto& transport = recv_data->transport;
+    auto& sess_mgr = transport.session_manager();
+    auto& to_raftnode_deser_queue = transport.to_raftnode_deser_queue();
+
+    if (revents & EV_TIMEOUT) {
+        for (auto& peer : sess_mgr.peers()) {
+            auto pipeline = peer.second->pipeline();
+            if (pipeline->is_running()) {
+                auto count = pipeline->to_deser_queue().try_dequeue_bulk(deser_buf.data(), deser_buf.size());
+                to_raftnode_deser_queue.enqueue_bulk(std::make_move_iterator(deser_buf.data()), count);
+            }
+        }
+        return;
+    }
+
+    if (revents & EV_ERROR) {
+        log::console().error("handle_receive_timeout error : {}", strerror(errno));
+    }
+}
+
 auto embkv::raft::Transport::handshake_data() noexcept
 -> std::unordered_set<HandshakeData*>& {
     thread_local std::unordered_set<HandshakeData*> data;
+    return data;
+}
+
+auto embkv::raft::Transport::connect_data() noexcept -> std::unordered_set<ConnectData*>& {
+    thread_local std::unordered_set<ConnectData*> data;
     return data;
 }
 
@@ -147,6 +183,7 @@ void embkv::raft::Transport::accept_loop() {
     ac_watcher.data = ac_data;
     ev_io_init(&ac_watcher, accept_cb, ac_data->listener.fd(), EV_READ);
     ev_io_start(ac_loop, &ac_watcher);
+    log::console().info("Transport running on {}:{}", config_.ip, config_.port);
     ev_run(ac_loop, 0);
     ev_io_stop(ac_loop, &ac_watcher);
     // 清理资源
@@ -158,19 +195,34 @@ void embkv::raft::Transport::accept_loop() {
 }
 
 void embkv::raft::Transport::serialize_loop() {
-    // 每1ms进行一次序列化(执行一次handle_serialize_timeout)
+    // 每3ms进行一次序列化(执行一次handle_serialize_timeout)
     struct ev_loop* ser_loop = ev_loop_new(EVFLAG_AUTO);
     loops_.insert(ser_loop);
     ev_timer ser_watcher;
     auto* ser_data = new SerializeData{*this};
     ser_watcher.data = ser_data;
-    ev_timer_init(&ser_watcher, handle_serialize_timeout, 0, 0.001);
+    ev_timer_init(&ser_watcher, handle_serialize_timeout, 0, 0.003);
     ev_timer_start(ser_loop, &ser_watcher);
     ev_run(ser_loop, 0);
     ev_timer_stop(ser_loop, &ser_watcher);
     // 清理资源
     delete ser_data;
     ev_loop_destroy(ser_loop);
+}
+
+void embkv::raft::Transport::receive_loop() {
+    // 每3ms将pipeline中的反序列化消息取走交给raftnode
+    struct ev_loop* recv_loop = ev_loop_new(EVFLAG_AUTO);
+    loops_.insert(recv_loop);
+    ev_timer recv_watcher;
+    auto* recv_data = new ReceiveData{*this};
+    recv_watcher.data = recv_data;
+    ev_timer_init(&recv_watcher, handle_receive_timeout, 0, 0.003);
+    ev_timer_start(recv_loop, &recv_watcher);
+    ev_run(recv_loop, 0);
+    ev_timer_stop(recv_loop, &recv_watcher);
+    delete recv_data;
+    ev_loop_destroy(recv_loop);
 }
 
 void embkv::raft::Transport::try_connect_to_peer(uint64_t id) {
@@ -190,6 +242,7 @@ void embkv::raft::Transport::try_connect_to_peer(uint64_t id) {
     std::error_code ec;
     if (!socket::net::SocketAddr::parse(peer->ip(), peer->port(), addr, ec)) {
         peer->pipeline()->release_connect_mutex();
+        log::console().info("Failed to parse addr");
         return;
     }
 
@@ -206,6 +259,7 @@ void embkv::raft::Transport::try_connect_to_peer(uint64_t id) {
         auto& buffer = detail::HeadManager::buffer();
         stream.write_exact(buffer.data(), buffer.size());
         peer->pipeline()->run(std::move(stream));
+        log::console().info("Connect to {}", id);
     }
     peer->pipeline()->release_connect_mutex();
 }

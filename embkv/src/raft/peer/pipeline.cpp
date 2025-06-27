@@ -104,17 +104,23 @@ void embkv::raft::detail::Pipeline::handle_write_timeout(struct ev_loop* loop, s
 }
 
 void embkv::raft::detail::Pipeline::event_loop() noexcept {
+    if (!stream_.is_valid()) {
+        log::console().error("Pipeline stream is not valid.");
+        return;
+    }
     auto* rd_data = new ReadData(*this);
     auto* wr_data = new WriteData(*this);
-    read_watcher_.data = rd_data;
-    write_watcher_.data = wr_data;
-    ev_io_init(&read_watcher_, read_cb, stream_.fd(), EV_READ);
-    ev_timer_init(&write_watcher_, handle_write_timeout, 0, 0.001);
-    ev_io_start(loop_, &read_watcher_);
-    ev_timer_start(loop_, &write_watcher_);
+    ev_io read_watcher{};
+    ev_timer write_watcher{};
+    read_watcher.data = rd_data;
+    write_watcher.data = wr_data;
+    ev_io_init(&read_watcher, read_cb, stream_.fd(), EV_READ);
+    ev_timer_init(&write_watcher, handle_write_timeout, 0, 0.001);
+    ev_io_start(loop_, &read_watcher);
+    ev_timer_start(loop_, &write_watcher);
     ev_run(loop_, 0);
-    ev_io_stop(loop_, &read_watcher_);
-    ev_timer_stop(loop_, &write_watcher_);
+    ev_io_stop(loop_, &read_watcher);
+    ev_timer_stop(loop_, &write_watcher);
     delete rd_data;
     delete wr_data;
 }

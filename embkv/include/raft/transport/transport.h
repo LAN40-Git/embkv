@@ -29,9 +29,20 @@ class Transport {
         }
     };
 
+    struct ConnectData {
+        Transport& transport;
+        ev_io io_watcher{};
+        explicit ConnectData(Transport& t) : transport(t) {}
+    };
+
     struct SerializeData {
         Transport& transport;
         explicit SerializeData(Transport& t) : transport(t) {}
+    };
+
+    struct ReceiveData {
+        Transport& transport;
+        explicit ReceiveData(Transport& t) : transport(t) {}
     };
 
 public:
@@ -60,14 +71,17 @@ private:
     static void handshake_cb(struct ev_loop* loop, struct ev_io* w, int revents);
     static void handle_handshake_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
     static void handle_serialize_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
+    static void handle_receive_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
 
 private:
     static auto handshake_data() noexcept -> std::unordered_set<HandshakeData*>&;
+    static auto connect_data() noexcept -> std::unordered_set<ConnectData*>&;
 
 private:
     // ====== loop ======
     void accept_loop();
     void serialize_loop();
+    void receive_loop();
 
 private:
     void try_connect_to_peer(uint64_t id);

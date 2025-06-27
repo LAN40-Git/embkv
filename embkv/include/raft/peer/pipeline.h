@@ -27,7 +27,10 @@ public:
     using DeserQueue = util::PriorityQueue<std::unique_ptr<Message>>;
     using FreeQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Message>>;
     using Priority = util::detail::Priority;
-    Pipeline() = default;
+    Pipeline() {
+        loop_ = ev_loop_new(EVFLAG_AUTO);
+    }
+
     ~Pipeline() noexcept {
         stop();
         ev_loop_destroy(loop_);
@@ -69,9 +72,7 @@ private:
     SerQueue                 from_ser_queue_;
     DeserQueue               to_deser_queue_;
     FreeQueue                free_deser_queue_;
-    ev_io                    read_watcher_{0};
-    ev_timer                 write_watcher_{0};
-    struct ev_loop*          loop_{nullptr};
+    struct ev_loop*          loop_;
     boost::asio::thread_pool pool_{1};
 };
 } // namespace embkv::raft::detail

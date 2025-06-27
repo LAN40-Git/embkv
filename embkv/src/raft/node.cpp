@@ -29,7 +29,7 @@ void embkv::raft::RaftNode::stop() noexcept {
 
 void embkv::raft::RaftNode::handle_election_timeout(struct ev_loop* loop, struct ev_timer* w, int revents) {
     auto random_delay = []() {
-        return util::FastRand::instance().rand_range(150, 300) / 1000;
+        return util::FastRand::instance().rand_range(150, 300) / 1000.0;
     };
     auto* el_data = static_cast<ElectionData*>(w->data);
 
@@ -41,6 +41,7 @@ void embkv::raft::RaftNode::handle_election_timeout(struct ev_loop* loop, struct
             // 只有当上次心跳与当前时间的间隔大于等于选举超时间隔时才进行选举
             el_data->node.start_election();
         }
+        el_data->start = now;
     }
 
     // 重启定时器
@@ -59,7 +60,7 @@ void embkv::raft::RaftNode::handle_heartbeat_timeout(struct ev_loop* loop, struc
 }
 
 void embkv::raft::RaftNode::event_loop() {
-    uint64_t delay = util::FastRand::instance().rand_range(150, 300) / 1000;
+    uint64_t delay = util::FastRand::instance().rand_range(150, 300) / 1000.0;
     auto* el_data = new ElectionData{*this, delay};
     auto* hb_data = new HeartbeatData{*this};
     election_watcher_.data = el_data;
@@ -76,7 +77,8 @@ void embkv::raft::RaftNode::event_loop() {
 }
 
 void embkv::raft::RaftNode::start_election() {
-    if (st_.role_ != detail::RaftStatus::Role::Follower) {
+    if (role() != detail::RaftStatus::Role::Follower &&
+        role() != detail::RaftStatus::Role::Candidate) {
         return;
     }
     // 更新状态

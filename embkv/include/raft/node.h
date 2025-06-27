@@ -58,7 +58,7 @@ public:
         explicit HeartbeatData(RaftNode& n) : node(n) {}
     };
 
-    explicit RaftNode(const std::shared_ptr<Transport>& transport)
+    explicit RaftNode(std::shared_ptr<Transport> transport)
         : config_(Config::load())
         , transport_(transport) {
         ev_init(&election_watcher_, handle_election_timeout);
@@ -82,6 +82,7 @@ public:
     auto cluster_id() const noexcept -> uint64_t { return config_.cluster_id; }
     auto node_id() const noexcept -> uint64_t { return config_.node_id; }
     auto current_term() const noexcept -> uint64_t { return st_.current_term_; }
+    auto role() const noexcept -> detail::RaftStatus::Role { return st_.role_; }
     auto last_applied() const noexcept -> uint64_t { return st_.last_applied_; }
     auto last_log_index() const noexcept -> uint64_t { return st_.last_log_index_; }
     auto last_log_term() const noexcept -> uint64_t { return st_.last_log_term_; }

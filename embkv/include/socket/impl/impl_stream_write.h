@@ -5,7 +5,7 @@ namespace embkv::socket::detail
 template <typename Stream>
 struct ImplStreamWrite {
     auto write(const void* buf, size_t len) {
-        return ::write(static_cast<Stream*>(this)->fd(), buf, len);
+        return ::write(static_cast<const Stream*>(this)->fd(), buf, len);
     }
 
     auto write_exact(const void* buf, size_t len) -> size_t {
