@@ -16,16 +16,13 @@ namespace detail
 class RaftStatus {
 public:
     enum class Role { Follower, Candidate, Leader, Learner, Unknown};
-    explicit RaftStatus(uint64_t cluster_id, uint64_t node_id)
-        : cluster_id_(cluster_id), node_id_(node_id) {}
+    RaftStatus() = default;
 
 public:
     void increase_term_to(uint64_t new_term);
 
 
 public:
-    uint64_t                  cluster_id_{0};
-    uint64_t                  node_id_{0};
     // 持久化状态
     uint64_t                  current_term_{0};
     boost::optional<uint64_t> voted_for_{boost::none};
@@ -48,6 +45,7 @@ public:
 
 class RaftNode {
     using Priority = util::detail::Priority;
+    using FreeQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Message>>;
 public:
     struct ElectionData {
         RaftNode& node;
@@ -61,7 +59,7 @@ public:
     };
 
     explicit RaftNode(const std::shared_ptr<Transport>& transport)
-        : st_(transport->cluster_id(), transport->node_id())
+        : config_(Config::load())
         , transport_(transport) {
         ev_init(&election_watcher_, handle_election_timeout);
         ev_init(&heartbeat_watcher_, handle_heartbeat_timeout);
@@ -77,8 +75,8 @@ public:
 
 public:
     // status
-    auto cluster_id() const noexcept -> uint64_t { return st_.cluster_id_; }
-    auto node_id() const noexcept -> uint64_t { return st_.node_id_; }
+    auto cluster_id() const noexcept -> uint64_t { return config_.cluster_id; }
+    auto node_id() const noexcept -> uint64_t { return config_.node_id; }
     auto current_term() const noexcept -> uint64_t { return st_.current_term_; }
     auto last_applied() const noexcept -> uint64_t { return st_.last_applied_; }
     auto last_log_index() const noexcept -> uint64_t { return st_.last_log_index_; }
@@ -92,14 +90,16 @@ public:
 private:
     void event_loop();
     void start_election();
-    void try_heartbeat() const;
+    void try_heartbeat();
 
 private:
+    const Config&              config_;
     std::atomic<bool>          is_running_{false};
     std::mutex                 run_mutex_;
     detail::RaftStatus         st_;
     std::shared_ptr<Transport> transport_;
     boost::asio::thread_pool   pool_{1};
+    FreeQueue                  free_deser_queue_;
     struct ev_timer            election_watcher_{};
     struct ev_timer            heartbeat_watcher_{};
     struct ev_loop*            loop_{nullptr};

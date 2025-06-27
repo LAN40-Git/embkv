@@ -1,5 +1,6 @@
 #pragma once
 #include "log.h"
+#include "config.h"
 #include "proto/rpc.pb.h"
 #include "common/util/fd.h"
 #include "common/util/nocopyable.h"
@@ -22,8 +23,10 @@ class Pipeline : util::Nocopyable {
         explicit WriteData(Pipeline &p) : pipeline(p) {}
     };
 public:
-    using SerQueue = util::PriorityQueue<std::shared_ptr<std::string>>;
+    using SerQueue = moodycamel::ConcurrentQueue<std::shared_ptr<std::string>>;
     using DeserQueue = util::PriorityQueue<std::unique_ptr<Message>>;
+    using FreeQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Message>>;
+    using Priority = util::detail::Priority;
     Pipeline() = default;
     Pipeline(Pipeline &&) = delete;
     Pipeline &operator=(Pipeline &&) = delete;
@@ -44,8 +47,8 @@ public:
     }
 
 public:
-    auto from_transport_ser_queue() -> SerQueue& { return from_transport_ser_queue_; }
-    auto to_transport_deser_queue() -> DeserQueue& { return to_transport_deser_queue_; }
+    auto from_ser_queue() -> SerQueue& { return from_ser_queue_; }
+    auto to_deser_queue() -> DeserQueue& { return to_deser_queue_; }
 
 private:
     static void read_cb(struct ev_loop* loop, struct ev_io* w, int revents);
@@ -59,8 +62,9 @@ private:
     std::atomic<bool>        is_running_{false};
     std::mutex               run_mutex_{};
     std::mutex               connect_mutex_{};
-    SerQueue                 from_transport_ser_queue_;
-    DeserQueue               to_transport_deser_queue_;
+    SerQueue                 from_ser_queue_;
+    DeserQueue               to_deser_queue_;
+    FreeQueue                free_deser_queue_;
     ev_io                    read_watcher_{0};
     ev_timer                 write_watcher_{0};
     struct ev_loop*          loop_{nullptr};

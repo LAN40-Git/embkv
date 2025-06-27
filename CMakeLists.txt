@@ -19,6 +19,9 @@ set(SOURCE_FILES
 # fmt
 find_package(fmt REQUIRED)
 
+# json
+find_package(nlohmann_json 3.5 REQUIRED)
+
 # libev
 find_path(LIBEV_INCLUDE_DIR ev.h
     PATHS /usr/include /usr/local/include
@@ -49,6 +52,7 @@ if(LIBEV_INCLUDE_DIR AND LIBEV_LIBRARY)
             ${Boost_LIBRARIES}
             Boost::thread
             fmt::fmt
+            nlohmann_json::nlohmann_json
     )
 else()
     message(FATAL_ERROR "libev not found!")

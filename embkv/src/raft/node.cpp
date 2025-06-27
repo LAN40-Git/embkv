@@ -83,11 +83,12 @@ void embkv::raft::RaftNode::start_election() {
     st_.voted_for_ = node_id();
     st_.votes_ = 1;
 
+    // 构造投票请求消息
     std::unique_ptr<Message> msg;
-    if (!transport_->free_deser_queue().try_dequeue(msg)) {
-        msg = std::make_unique<Message>();
-    } else {
+    if (free_deser_queue_.try_dequeue(msg)) {
         msg->Clear();
+    } else {
+        msg = std::make_unique<Message>();
     }
     msg->set_cluster_id(cluster_id());
     msg->set_node_id(node_id());
@@ -98,15 +99,15 @@ void embkv::raft::RaftNode::start_election() {
     transport_->to_pipeline_deser_queue().enqueue(std::move(msg), Priority::Critical);
 }
 
-void embkv::raft::RaftNode::try_heartbeat() const {
+void embkv::raft::RaftNode::try_heartbeat() {
     if (st_.role_ != detail::RaftStatus::Role::Leader) {
         return;
     }
     std::unique_ptr<Message> msg;
-    if (!transport_->free_deser_queue().try_dequeue(msg)) {
-        msg = std::make_unique<Message>();
-    } else {
+    if (free_deser_queue_.try_dequeue(msg)) {
         msg->Clear();
+    } else {
+        msg = std::make_unique<Message>();
     }
     msg->set_cluster_id(cluster_id());
     msg->set_node_id(node_id());

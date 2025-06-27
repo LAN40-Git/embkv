@@ -42,14 +42,8 @@ class Transport {
 public:
     using DeserQueue = util::PriorityQueue<std::unique_ptr<Message>>;
     using FreeQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Message>>;
-    explicit Transport(uint64_t cluster_id, uint64_t node_id, std::string name, std::string ip,
-        uint16_t port, detail::SessionManager::PeerMap peers)
-        : sess_mgr_(std::move(peers))
-        , cluster_id_(cluster_id)
-        , node_id_(node_id)
-        , name_(std::move(name))
-        , ip_(std::move(ip))
-        , port_(port) {}
+    explicit Transport(detail::SessionManager::PeerMap peers)
+        : config_(Config::load()), sess_mgr_(std::move(peers)) {}
 
 public:
     void run() noexcept;
@@ -57,13 +51,12 @@ public:
     auto is_running() const noexcept -> bool { return is_running_.load(std::memory_order_relaxed); }
 
 public:
-    auto cluster_id() const noexcept -> uint64_t { return cluster_id_; }
-    auto node_id() const noexcept -> uint64_t { return node_id_; }
-    auto name() const noexcept -> std::string { return name_; }
-    auto ip() const noexcept -> std::string { return ip_; }
-    auto port() const noexcept -> uint16_t { return port_; }
+    auto cluster_id() const noexcept -> uint64_t { return config_.cluster_id; }
+    auto node_id() const noexcept -> uint64_t { return config_.node_id; }
+    auto node_name() const noexcept -> std::string { return config_.node_name; }
+    auto ip() const noexcept -> std::string { return config_.ip; }
+    auto port() const noexcept -> uint16_t { return config_.port; }
     auto session_manager() noexcept -> detail::SessionManager& { return sess_mgr_; }
-    auto free_deser_queue() noexcept -> FreeQueue& { return free_deser_queue_; }
     auto to_raftnode_deser_queue() noexcept -> DeserQueue& { return to_raftnode_deser_queue_; }
     auto to_pipeline_deser_queue() noexcept -> DeserQueue& { return to_pipeline_deser_queue_; }
 
@@ -88,14 +81,10 @@ private:
     void start_handshake(struct ev_loop* loop, socket::net::TcpStream&& stream, socket::net::SocketAddr addr);
 
 private:
+    const Config&            config_;
     detail::SessionManager   sess_mgr_;
     std::atomic<bool>        is_running_{false};
     std::mutex               run_mutex_;
-    uint64_t                 cluster_id_{0};
-    uint64_t                 node_id_{0};
-    std::string              name_;
-    std::string              ip_;
-    uint16_t                 port_;
     boost::asio::thread_pool pool_{4};
     std::unordered_set<struct ev_loop*> loops_;
 

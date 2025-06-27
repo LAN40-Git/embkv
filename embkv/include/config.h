@@ -4,28 +4,30 @@
 #include <nlohmann/json.hpp>
 #include "common/util/nocopyable.h"
 
-namespace embkv::raft::detail {
+namespace embkv {
     class Config : public util::Nocopyable {
-        static constexpr std::string CONFIG_PATH = "config.json";
     public:
-        // ====== 默认配置 ======
-
-
         // ====== 成员变量 ======
-        std::size_t entries{ENTRIES};
-        std::size_t submit_interval{SUBMIT_INTERVAL};
+        uint64_t    cluster_id{0};
+        uint64_t    node_id{0};
+        std::string node_name{"Default_Node"};
+        std::string ip{"0.0.0.0"};
+        uint16_t    port{8080};
 
-        // 从文件加载配置 TODO：添加错误处理
+        // 从文件加载配置
         static const Config& load() {
             static Config instance;
             static std::once_flag flag;
             std::call_once(flag, [&] {
-                std::ifstream file(CONFIG_PATH);
+                std::ifstream file("config.json");
                 if (file.good()) {
                     nlohmann::json j;
                     file >> j;
-                    instance.entries = j.value("entries", instance.entries);
-                    instance.submit_interval = j.value("submit_interval", instance.submit_interval);
+                    instance.cluster_id = j.value("cluster_id", instance.cluster_id);
+                    instance.node_id = j.value("node_id", instance.node_id);
+                    instance.node_name = j.value("node_name", instance.node_name);
+                    instance.ip = j.value("ip", instance.ip);
+                    instance.port = j.value("port", instance.port);
                 } else {
                     save(instance);
                 }
@@ -40,14 +42,17 @@ namespace embkv::raft::detail {
         // 保存配置到文件
         static void save(const Config& config) {
             nlohmann::json j;
-            j["entries"] = config.entries;
-            j["submit_interval"] = config.submit_interval;
+            j["cluster_id"] = config.cluster_id;
+            j["node_id"] = config.node_id;
+            j["node_name"] = config.node_name;
+            j["ip"] = config.ip;
+            j["port"] = config.port;
 
-            std::ofstream file(CONFIG_PATH);
+            std::ofstream file("config.json");
             if (!file.good()) {
                 throw std::runtime_error("Failed to open config file");
             }
             file << j.dump(4);
         }
     };
-} // namespace embkv::raft::detail
+} // namespace embkv

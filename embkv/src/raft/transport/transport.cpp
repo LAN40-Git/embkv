@@ -78,17 +78,39 @@ void embkv::raft::Transport::handle_handshake_timeout(struct ev_loop* loop, stru
 }
 
 void embkv::raft::Transport::handle_serialize_timeout(struct ev_loop* loop, struct ev_timer* w, int revents) {
-    thread_local std::array<std::unique_ptr<Message>, 64> buf;
+    thread_local std::array<std::unique_ptr<Message>, 64> deser_buf;
     auto* ser_data = static_cast<SerializeData*>(w->data);
+    auto& transport = ser_data->transport;
+    auto& peers = transport.session_manager().peers();
 
     if (revents & EV_ERROR) {
         log::console().error("handle_serialize_timeout error : {}", strerror(errno));
     } else if (revents & EV_TIMEOUT) {
         auto& queue = ser_data->transport.to_pipeline_deser_queue();
-        auto count = queue.try_dequeue_bulk(buf.data(), buf.size());
+        auto count = queue.try_dequeue_bulk(deser_buf.data(), deser_buf.size());
+        std::array<std::shared_ptr<std::string>, 64> ser_buf;
         for (auto i = 0; i < count; ++i) {
-            auto ser_str = std::make_shared<std::string>(buf[i]->SerializeAsString());
+            const auto& msg = *deser_buf[i];
+            size_t body_size = msg.ByteSizeLong();
+            size_t total_size = sizeof(detail::HeadManager::Header) + body_size;
 
+            ser_buf[i] = std::make_shared<std::string>();
+            ser_buf[i]->resize(total_size);
+
+            detail::HeadManager::Header header;
+            header.flags = detail::HeadManager::Flags::kRaftNode;
+            header.length = total_size;
+            memcpy(const_cast<char*>(ser_buf[i]->data()), &header, sizeof(header));
+
+            msg.SerializeToArray(const_cast<char*>(ser_buf[i]->data() + sizeof(header)), body_size);
+        }
+        for (auto& peer : peers) {
+            auto pipeline = peer.second->pipeline();
+            if (pipeline->is_running()) {
+                pipeline->from_ser_queue().enqueue_bulk(ser_buf.data(), count);
+            } else if (peer.first > transport.node_id()) {
+                transport.try_connect_to_peer(peer.first);
+            }
         }
     }
 }
@@ -108,7 +130,7 @@ auto embkv::raft::Transport::handshake_data() noexcept
 void embkv::raft::Transport::accept_loop(struct ev_loop* loop) {
     socket::net::SocketAddr addr{};
     std::error_code ec;
-    if (!socket::net::SocketAddr::parse("0.0.0.0", 8080, addr, ec)) {
+    if (!socket::net::SocketAddr::parse(config_.ip, config_.port, addr, ec)) {
         return;
     }
 
@@ -158,7 +180,7 @@ void embkv::raft::Transport::try_connect_to_peer(uint64_t id) {
     // 发送握手消息
     detail::HeadManager::Header header;
     header.flags = detail::HeadManager::Flags::kRaftNode;
-    header.length = node_id_;
+    header.length = config_.node_id;
     if (detail::HeadManager::serialize(header)) {
         auto& buffer = detail::HeadManager::buffer();
         stream.write_exact(buffer.data(), buffer.size());

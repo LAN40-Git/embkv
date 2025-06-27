@@ -8,7 +8,7 @@ auto embkv::raft::detail::SessionManager::peer_at(uint64_t id) -> Peer* {
 
 void embkv::raft::detail::SessionManager::add_peer(std::unique_ptr<Peer> peer) noexcept {
     boost::unique_lock<boost::shared_mutex> lock(peers_mutex_);
-    peers_.emplace(peer->id(), std::move(peer));
+    peers_.emplace(peer->node_id(), std::move(peer));
 }
 
 void embkv::raft::detail::SessionManager::remove_peer(uint64_t peer_id) noexcept {

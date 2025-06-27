@@ -13,6 +13,7 @@ public:
 
 public:
     // ====== peers ======
+    auto peers() -> PeerMap& { return peers_; }
     auto peer_at(uint64_t id) -> Peer*;
     void add_peer(std::unique_ptr<Peer> peer) noexcept;
     void remove_peer(uint64_t peer_id) noexcept;

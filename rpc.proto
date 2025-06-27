@@ -17,15 +17,15 @@ message Message {
   oneof content {
     // Raft核心协议
     RequestVoteRequest request_vote_request = 3;
-    RequestVoteResponse request_vote_reply = 4;
+    RequestVoteResponse request_vote_response= 4;
     AppendEntriesRequest append_entries_request = 5;
-    AppendEntriesResponse append_entries_reply = 6;
+    AppendEntriesResponse append_entries_response= 6;
     InstallSnapshotRequest snapshot_request = 7;
-    InstallSnapshotResponse snapshot_reply = 8;
+    InstallSnapshotResponse snapshot_response = 8;
 
     // 客户端交互
     ClientRequest client_request = 9;
-    ClientResponse client_reply = 10;
+    ClientResponse client_response = 10;
   }
 }
 
