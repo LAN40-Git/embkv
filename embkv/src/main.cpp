@@ -1,31 +1,14 @@
-#include "log.h"
-#include <ev.h>
-#include "socket/net/listener.h"
-#include "socket/net/stream.h"
+#include "raft/node.h"
 
-using namespace embkv::socket::detail;
-using namespace embkv::log;
-using namespace embkv::socket::net;
+using namespace embkv::raft;
 
 int main() {
-    // std::error_code ec;
-    // SocketAddr addr{};
-    // if (!SocketAddr::parse("127.0.0.1", 9090, addr, ec)) {
-    //     console.error("{}", ec.message());
-    //     return -1;
-    // }
-    // auto listener = TcpListener::bind(addr);
-    // if (!listener.is_valid()) {
-    //     console.error("Failed to bind socket");
-    //     return -1;
-    // }
-    //
-    // struct ev_loop* loop = EV_DEFAULT;
-    //
-    // ev_io accept_watcher;
-    // accept_watcher.data = &listener;
-    // ev_io_init(&accept_watcher, accept_cb, listener.fd(), EV_READ | EV_WRITE);
-    // ev_io_start(loop, &accept_watcher);
-    // ev_run(loop, 0);
-    // return 0;
+    // 构造节点集群
+    std::unordered_map<uint64_t, std::unique_ptr<Peer>> peers;
+    peers.emplace(0, std::make_unique<Peer>(0, 0, "Node1", "127.0.0.0", 8080));
+    peers.emplace(1, std::make_unique<Peer>(0, 1, "Node2", "127.0.0.0", 8081));
+    peers.emplace(2, std::make_unique<Peer>(0, 2, "Node3", "127.0.0.0", 8081));
+    auto transport = std::make_shared<Transport>(std::move(peers));
+    transport->run();
+    while (true) { std::this_thread::sleep_for(std::chrono::milliseconds(10000)); }
 }

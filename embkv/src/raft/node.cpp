@@ -69,6 +69,8 @@ void embkv::raft::RaftNode::event_loop() {
     ev_timer_start(loop_, &election_watcher_);
     ev_timer_start(loop_, &heartbeat_watcher_);
     ev_run(loop_, 0);
+    ev_timer_stop(loop_, &election_watcher_);
+    ev_timer_stop(loop_, &heartbeat_watcher_);
     delete el_data;
     delete hb_data;
 }

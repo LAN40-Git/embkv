@@ -65,6 +65,10 @@ public:
         ev_init(&heartbeat_watcher_, handle_heartbeat_timeout);
         loop_ = ev_loop_new(EVFLAG_AUTO);
     }
+    ~RaftNode() noexcept {
+        stop();
+        ev_loop_destroy(loop_);
+    }
 
 public:
     void run() noexcept;

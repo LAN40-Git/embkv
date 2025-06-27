@@ -7,6 +7,9 @@ void embkv::raft::detail::Pipeline::run(socket::net::TcpStream&& stream) noexcep
     }
     is_running_.store(true, std::memory_order_release);
     stream_ = std::move(stream);
+    boost::asio::post(pool_, [this]() {
+        event_loop();
+    });
 }
 
 void embkv::raft::detail::Pipeline::stop() noexcept {
@@ -16,6 +19,8 @@ void embkv::raft::detail::Pipeline::stop() noexcept {
     }
     is_running_.store(false, std::memory_order_release);
     stream_.close();
+    ev_break(loop_, EVBREAK_ALL);
+    pool_.wait();
 }
 
 void embkv::raft::detail::Pipeline::read_cb(struct ev_loop* loop, struct ev_io* w, int revents) {
@@ -88,8 +93,13 @@ void embkv::raft::detail::Pipeline::handle_write_timeout(struct ev_loop* loop, s
     if (revents & EV_TIMEOUT) {
         auto count = from_ser_queue.try_dequeue_bulk(buf.data(), buf.size());
         for (auto i = 0; i < count; ++i) {
-            // 构造并发送头部
+            stream.write_exact(buf[i]->data(), buf[i]->size());
         }
+        return;
+    }
+
+    if (revents & EV_ERROR) {
+        log::console().error("handle_write_timeout error : {}", strerror(errno));
     }
 }
 
@@ -103,6 +113,8 @@ void embkv::raft::detail::Pipeline::event_loop() noexcept {
     ev_io_start(loop_, &read_watcher_);
     ev_timer_start(loop_, &write_watcher_);
     ev_run(loop_, 0);
+    ev_io_stop(loop_, &read_watcher_);
+    ev_timer_stop(loop_, &write_watcher_);
     delete rd_data;
     delete wr_data;
 }

@@ -9,13 +9,8 @@ class Transport {
     struct AcceptData {
         socket::net::TcpListener listener;
         Transport& transport;
-        ev_io io_watcher{};
-        struct ev_loop* loop{nullptr};
         explicit AcceptData(socket::net::TcpListener&& l, Transport& t)
             : listener(std::move(l)), transport(t) {}
-        ~AcceptData() {
-            ev_io_stop(loop, &io_watcher);
-        }
     };
 
     struct HandshakeData {
@@ -42,7 +37,7 @@ class Transport {
 public:
     using DeserQueue = util::PriorityQueue<std::unique_ptr<Message>>;
     using FreeQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Message>>;
-    explicit Transport(detail::SessionManager::PeerMap peers)
+    explicit Transport(detail::SessionManager::PeerMap&& peers)
         : config_(Config::load()), sess_mgr_(std::move(peers)) {}
 
 public:
@@ -67,14 +62,12 @@ private:
     static void handle_serialize_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
 
 private:
-    static auto accept_data() noexcept -> std::unordered_set<AcceptData*>&;
     static auto handshake_data() noexcept -> std::unordered_set<HandshakeData*>&;
-    static void clear_data() noexcept;
 
 private:
     // ====== loop ======
-    void accept_loop(struct ev_loop* loop);
-    void serialize_loop(struct ev_loop* loop);
+    void accept_loop();
+    void serialize_loop();
 
 private:
     void try_connect_to_peer(uint64_t id);

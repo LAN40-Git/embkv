@@ -28,6 +28,10 @@ public:
     using FreeQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Message>>;
     using Priority = util::detail::Priority;
     Pipeline() = default;
+    ~Pipeline() noexcept {
+        stop();
+        ev_loop_destroy(loop_);
+    }
     Pipeline(Pipeline &&) = delete;
     Pipeline &operator=(Pipeline &&) = delete;
 
@@ -68,6 +72,6 @@ private:
     ev_io                    read_watcher_{0};
     ev_timer                 write_watcher_{0};
     struct ev_loop*          loop_{nullptr};
-    boost::asio::thread_pool thread_pool_{1};
+    boost::asio::thread_pool pool_{1};
 };
 } // namespace embkv::raft::detail
