@@ -61,17 +61,21 @@ void embkv::raft::Transport::handshake_cb(struct ev_loop* loop, struct ev_io* w,
         auto& buffer = detail::HeadManager::buffer();
         auto size = hs_data->stream.read_exact(buffer.data(), buffer.size());
         if (size < sizeof(detail::HeadManager::Header)) {
+            log::console().info("The connection may be closed");
             delete hs_data;
             return;
         }
         if (auto header = detail::HeadManager::deserialize()) {
             if (!header.has_value()) { // 头部无效，握手失败
+                log::console().error("Invalid header");
                 delete hs_data;
                 return;
             }
 
-            auto peer = hs_data->transport.session_manager().peer_at(be64toh(header.value().length));
+            auto id = header.value().length;
+            auto peer = hs_data->transport.session_manager().peer_at(id);
             if (!peer) {
+                log::console().error("Peer not exist id:{}", id);
                 delete hs_data;
                 return;
             }
@@ -148,11 +152,6 @@ void embkv::raft::Transport::handle_receive_timeout(struct ev_loop* loop, struct
 auto embkv::raft::Transport::handshake_data() noexcept
 -> std::unordered_set<HandshakeData*>& {
     thread_local std::unordered_set<HandshakeData*> data;
-    return data;
-}
-
-auto embkv::raft::Transport::connect_data() noexcept -> std::unordered_set<ConnectData*>& {
-    thread_local std::unordered_set<ConnectData*> data;
     return data;
 }
 

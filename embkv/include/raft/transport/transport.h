@@ -74,7 +74,6 @@ private:
 
 private:
     static auto handshake_data() noexcept -> std::unordered_set<HandshakeData*>&;
-    static auto connect_data() noexcept -> std::unordered_set<ConnectData*>&;
 
 private:
     // ====== loop ======
