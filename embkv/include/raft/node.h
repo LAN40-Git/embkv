@@ -20,6 +20,7 @@ public:
 
 public:
     void increase_term_to(uint64_t new_term);
+    void become_leader();
 
 
 public:
@@ -91,11 +92,19 @@ public:
     // timer func
     static void handle_election_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
     static void handle_heartbeat_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
+    static void handle_parse_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
+
+
+private:
+    void handle_request_vote_request();
+    void handle_request_vote_response();
+    void handle_append_entries_request();
+    void handle_append_entries_response();
 
 private:
     void event_loop();
     void start_election();
-    void try_heartbeat();
+    void heartbeat();
 
 private:
     const Config&              config_;
@@ -106,6 +115,7 @@ private:
     boost::asio::thread_pool   pool_{1};
     struct ev_timer            election_watcher_{};
     struct ev_timer            heartbeat_watcher_{};
+    
     struct ev_loop*            loop_{nullptr};
 };
 } // namespace embkv::raft

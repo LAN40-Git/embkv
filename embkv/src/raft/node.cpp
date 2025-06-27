@@ -6,6 +6,10 @@ void embkv::raft::detail::RaftStatus::increase_term_to(uint64_t new_term) {
     current_term_ = new_term;
 }
 
+void embkv::raft::detail::RaftStatus::become_leader() {
+    role_ = Role::Leader;
+}
+
 void embkv::raft::RaftNode::run() noexcept {
     std::lock_guard<std::mutex> lock(run_mutex_);
     if (is_running_.load(std::memory_order_acquire)) {
@@ -51,12 +55,19 @@ void embkv::raft::RaftNode::handle_election_timeout(struct ev_loop* loop, struct
 
 void embkv::raft::RaftNode::handle_heartbeat_timeout(struct ev_loop* loop, struct ev_timer* w, int revents) {
     auto* hb_data = static_cast<HeartbeatData*>(w->data);
+    auto& node = hb_data->node;
 
     if (revents & EV_ERROR) {
         log::console().error("handle_heartbeat_timeout error : {}", strerror(errno));
     } else if (revents & EV_TIMEOUT) {
-
+        if (node.role() == detail::RaftStatus::Role::Leader) {
+            node.heartbeat();
+        }
     }
+}
+
+void embkv::raft::RaftNode::handle_parse_timeout(struct ev_loop* loop, struct ev_timer* w, int revents) {
+
 }
 
 void embkv::raft::RaftNode::event_loop() {
@@ -98,10 +109,7 @@ void embkv::raft::RaftNode::start_election() {
     transport_->to_pipeline_deser_queue().enqueue(std::move(msg), Priority::Critical);
 }
 
-void embkv::raft::RaftNode::try_heartbeat() {
-    if (st_.role_ != detail::RaftStatus::Role::Leader) {
-        return;
-    }
+void embkv::raft::RaftNode::heartbeat() {
     Message msg;
     msg.set_cluster_id(cluster_id());
     msg.set_node_id(node_id());
