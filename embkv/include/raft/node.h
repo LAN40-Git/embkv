@@ -46,7 +46,7 @@ public:
 
 class RaftNode {
     using Priority = util::detail::Priority;
-    using FreeQueue = moodycamel::ConcurrentQueue<std::unique_ptr<Message>>;
+    using DeserQueue = util::PriorityQueue<Message>;
 public:
     struct ElectionData {
         RaftNode& node;
@@ -59,11 +59,14 @@ public:
         explicit HeartbeatData(RaftNode& n) : node(n) {}
     };
 
+    struct ParseData {
+        RaftNode& node;
+        explicit ParseData(RaftNode& n) : node(n) {}
+    };
+
     explicit RaftNode(std::shared_ptr<Transport> transport)
         : config_(Config::load())
         , transport_(transport) {
-        ev_init(&election_watcher_, handle_election_timeout);
-        ev_init(&heartbeat_watcher_, handle_heartbeat_timeout);
         loop_ = ev_loop_new(EVFLAG_AUTO);
     }
     ~RaftNode() noexcept {
@@ -96,10 +99,10 @@ public:
 
 
 private:
-    void handle_request_vote_request();
-    void handle_request_vote_response();
-    void handle_append_entries_request();
-    void handle_append_entries_response();
+    void handle_request_vote_request(Message& msg, DeserQueue& queue);
+    void handle_request_vote_response(Message& msg, DeserQueue& queue);
+    void handle_append_entries_request(Message& msg, DeserQueue& queue);
+    void handle_append_entries_response(Message& msg, DeserQueue& queue);
 
 private:
     void event_loop();
@@ -113,9 +116,6 @@ private:
     detail::RaftStatus         st_;
     std::shared_ptr<Transport> transport_;
     boost::asio::thread_pool   pool_{1};
-    struct ev_timer            election_watcher_{};
-    struct ev_timer            heartbeat_watcher_{};
-    
     struct ev_loop*            loop_{nullptr};
 };
 } // namespace embkv::raft
