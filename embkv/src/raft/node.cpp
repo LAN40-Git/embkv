@@ -111,6 +111,9 @@ void embkv::raft::RaftNode::handle_request_vote_request(Message& msg, DeserQueue
     auto request_vote_request = msg.mutable_request_vote_request();
     auto term = request_vote_request->term();
     auto last_log_index = request_vote_request->last_log_index();
+    auto last_log_term = request_vote_request->last_log_term();
+
+
 }
 
 void embkv::raft::RaftNode::handle_request_vote_response(Message& msg, DeserQueue& queue) {
