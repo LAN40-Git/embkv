@@ -21,6 +21,8 @@ public:
 public:
     void increase_term_to(uint64_t new_term);
     void become_leader();
+    void handle_higher_term(uint64_t term);
+    void voted_for(boost::optional<uint64_t> id);
 
 
 public:
@@ -97,17 +99,17 @@ public:
     static void handle_heartbeat_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
     static void handle_parse_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
 
-
 private:
-    void handle_request_vote_request(Message& msg, DeserQueue& queue);
-    void handle_request_vote_response(Message& msg, DeserQueue& queue);
-    void handle_append_entries_request(Message& msg, DeserQueue& queue);
-    void handle_append_entries_response(Message& msg, DeserQueue& queue);
+    void handle_request_vote_request(Message& msg);
+    void handle_request_vote_response(Message& msg);
+    void handle_append_entries_request(Message& msg);
+    void handle_append_entries_response(Message& msg);
 
 private:
     void event_loop();
     void start_election();
     void heartbeat();
+    void reset_election_timer();
 
 private:
     const Config&              config_;
@@ -117,5 +119,8 @@ private:
     std::shared_ptr<Transport> transport_;
     boost::asio::thread_pool   pool_{1};
     struct ev_loop*            loop_{nullptr};
+    struct ev_timer            election_watcher_{};
+    struct ev_timer            heartbeat_watcher_{};
+    struct ev_timer            parse_watcher_{};
 };
 } // namespace embkv::raft

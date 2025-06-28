@@ -158,14 +158,14 @@ auto embkv::raft::Transport::handshake_data() noexcept
 void embkv::raft::Transport::accept_loop() {
     socket::net::SocketAddr addr{};
     std::error_code ec;
-    if (!socket::net::SocketAddr::parse(config_.ip, config_.port, addr, ec)) {
+    if (!socket::net::SocketAddr::parse(ip(), port(), addr, ec)) {
         log::console().error("Failed to parse addr : {}", ec.message());
         return;
     }
 
     auto listener = socket::net::TcpListener::bind(addr);
     if (!listener.is_valid()) {
-        log::console().error("Failed to bind {}:{} {}", config_.ip, config_.port, strerror(errno));
+        log::console().error("Failed to bind {}:{} {}", ip(), port(), strerror(errno));
         return;
     }
     struct ev_loop* ac_loop = ev_loop_new(EVFLAG_AUTO);
