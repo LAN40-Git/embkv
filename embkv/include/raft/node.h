@@ -6,7 +6,6 @@
 #include <utility>
 #include <boost/none.hpp>
 #include <boost/optional/optional.hpp>
-
 #include "transport/transport.h"
 
 namespace embkv::raft

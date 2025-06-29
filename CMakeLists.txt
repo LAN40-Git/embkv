@@ -11,9 +11,10 @@ set(SOURCE_FILES
         embkv/src/raft/node.cpp
         embkv/src/raft/transport/transport.cpp
         embkv/src/raft/transport/session_manager.cpp
+        embkv/src/raft/peer/pipeline.cpp
+        embkv/src/raft/log.cpp
         embkv/src/socket/socket.cpp
         embkv/src/common/util/fd.cpp
-        embkv/src/raft/peer/pipeline.cpp
 )
 
 # fmt

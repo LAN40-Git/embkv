@@ -34,7 +34,7 @@ message Message {
 message EntryMeta {
   uint64 term = 1;
   uint64 index = 2;
-  bytes client_request = 3;
+  bytes  client_request = 3;
 }
 
 message RequestVoteRequest {

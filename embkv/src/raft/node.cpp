@@ -1,4 +1,5 @@
 #include "raft/node.h"
+#include "log.h"
 #include "common/util/random.h"
 #include "common/util/time.h"
 
