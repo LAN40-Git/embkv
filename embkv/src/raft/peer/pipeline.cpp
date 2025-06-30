@@ -22,7 +22,7 @@ void embkv::raft::detail::Pipeline::stop() noexcept {
 }
 
 void embkv::raft::detail::Pipeline::read_cb(struct ev_loop* loop, struct ev_io* w, int revents) {
-    thread_local char read_buf_[10 * 1024]; // 10kb 缓冲区，过滤长度大于此缓冲的消息
+    thread_local char read_buf[10 * 1024]; // 10kb 缓冲区，过滤长度大于此缓冲的消息
     auto* rd_data = static_cast<ReadData*>(w->data);
     auto& stream = rd_data->pipeline.stream_;
     auto& to_deser_queue = rd_data->pipeline.to_deser_queue_;
@@ -39,16 +39,16 @@ void embkv::raft::detail::Pipeline::read_cb(struct ev_loop* loop, struct ev_io* 
         if (header.has_value()) {
             // 接收消息体
             auto length = header.value().length;
-            if (length > sizeof(read_buf_)) {
+            if (length > sizeof(read_buf)) {
                 log::console().error("Received too many bytes while reading.");
                 ev_break(loop, EVBREAK_ALL);
                 return;
             }
             // TODO: 使用缓冲区池优化
-            size = stream.read_exact(read_buf_, length);
+            size = stream.read_exact(read_buf, length);
 
             Message msg;
-            if (!msg.ParseFromArray(read_buf_, size)) {
+            if (!msg.ParseFromArray(read_buf, size)) {
                 log::console().error("Failed to parse message.");
             }
 

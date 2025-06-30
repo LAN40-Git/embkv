@@ -41,9 +41,10 @@ class Transport {
 
     struct ClientData {
         Transport& transport;
+        uint64_t id;
         ev_io io_watcher{};
         struct ev_loop* loop{nullptr};
-        explicit ClientData(Transport& t) : transport(t) {}
+        explicit ClientData(Transport& t, uint64_t id) : transport(t), id(id) {}
 
         ~ClientData() {
             ev_io_stop(loop, &io_watcher);

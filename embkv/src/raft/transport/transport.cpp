@@ -92,7 +92,7 @@ void embkv::raft::Transport::handshake_cb(struct ev_loop* loop, struct ev_io* w,
                     break;
                 }
                 case detail::HeadManager::Flags::kClientNode: {
-                    auto* cli_data = new ClientData{transport};
+                    auto* cli_data = new ClientData{transport, id};
                     cli_data->io_watcher.data = cli_data;
                     cli_data->loop = loop;
                     ev_io_init(&cli_data->io_watcher, client_cb, hs_data->stream.fd(), EV_READ);
@@ -114,14 +114,40 @@ void embkv::raft::Transport::handshake_cb(struct ev_loop* loop, struct ev_io* w,
 }
 
 void embkv::raft::Transport::client_cb(struct ev_loop* loop, struct ev_io* w, int revents) {
+    thread_local char buf[10 * 1024];
     auto* cli_data = static_cast<ClientData*>(w->data);
-    client_data().erase(cli_data);
     auto& transport = cli_data->transport;
+    auto client = transport.session_manager().client_at(cli_data->id);
+    if (!client) {
+        log::console().error("Client is not exist {}", cli_data->id);
+        client_data().erase(cli_data);
+        delete cli_data;
+        return;
+    }
 
     if (revents & EV_READ) {
-        // TODO: 处理接收到的客户端消息
-        
+        auto size = client->stream.read_exact(buf, sizeof(detail::HeadManager::Header));
+        if (size < sizeof(detail::HeadManager::Header)) {
+            client_data().erase(cli_data);
+            delete cli_data;
+            return;
+        }
+        auto header = detail::HeadManager::deserialize();
+        size = client->stream.read_exact(buf, header->length);
+        if (size == 0) {
+            client_data().erase(cli_data);
+            delete cli_data;
+            return;
+        }
+        Message msg;
+        if (msg.ParseFromArray(buf, header->length)) {
+            transport.to_raftnode_deser_queue_.enqueue(std::move(msg), util::detail::Priority::Medium);
+        }
         return;
+    }
+
+    if (revents & EV_ERROR) {
+        log::console().error("client_cb error : {}", strerror(errno));
     }
 }
 
