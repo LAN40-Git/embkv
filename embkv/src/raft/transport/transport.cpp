@@ -119,6 +119,7 @@ void embkv::raft::Transport::client_cb(struct ev_loop* loop, struct ev_io* w, in
     auto& transport = cli_data->transport;
 
     if (revents & EV_READ) {
+        // TODO: 处理接收到的客户端消息
         
         return;
     }
