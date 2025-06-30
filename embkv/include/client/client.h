@@ -28,6 +28,11 @@ public:
     auto is_running() const noexcept -> bool { return is_running_.load(std::memory_order_relaxed); }
 
 public:
+    auto id() const noexcept -> uint64_t { return id_; }
+
+public:
+    auto connect_to_server(uint64_t id) const -> socket::net::TcpStream;
+    void redirect_to_leader(uint64_t leader_hint);
     auto put(const std::string& key, const std::string& value) -> bool;
     auto get(const std::string& key) -> boost::optional<std::string>;
     auto del(const std::string& key) -> bool;

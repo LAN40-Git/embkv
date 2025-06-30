@@ -1,5 +1,7 @@
 #include "raft/transport/transport.h"
 
+#include "client/client.h"
+
 void embkv::raft::Transport::run() noexcept {
     std::lock_guard<std::mutex> lock(run_mutex_);
     if (is_running_.load(std::memory_order_acquire)) {
@@ -55,6 +57,7 @@ void embkv::raft::Transport::accept_cb(struct ev_loop* loop, struct ev_io* w, in
 void embkv::raft::Transport::handshake_cb(struct ev_loop* loop, struct ev_io* w, int revents) {
     auto hs_data = static_cast<HandshakeData*>(w->data);
     handshake_data().erase(hs_data);
+    auto& transport = hs_data->transport;
     if (revents & EV_ERROR) {
         log::console().error("handshake_cb error : {}", strerror(errno));
     } else if (revents & EV_READ) {
@@ -73,18 +76,52 @@ void embkv::raft::Transport::handshake_cb(struct ev_loop* loop, struct ev_io* w,
             }
 
             auto id = header.value().length;
-            auto peer = hs_data->transport.session_manager().peer_at(id);
-            if (!peer) {
-                log::console().error("Peer not exist id:{}", id);
-                delete hs_data;
-                return;
+            auto& sess_mgr = transport.session_manager();
+
+            switch (header->flags) {
+                case detail::HeadManager::Flags::kRaftNode: {
+                    auto peer = sess_mgr.peer_at(id);
+                    if (!peer) {
+                        log::console().error("Peer not exist id:{}", id);
+                        delete hs_data;
+                        return;
+                    }
+                    // 启动通信
+                    peer->pipeline()->run(std::move(hs_data->stream));
+                    log::console().info("Connect to peer : {}", id);
+                    break;
+                }
+                case detail::HeadManager::Flags::kClientNode: {
+                    auto* cli_data = new ClientData{transport};
+                    cli_data->io_watcher.data = cli_data;
+                    cli_data->loop = loop;
+                    ev_io_init(&cli_data->io_watcher, client_cb, hs_data->stream.fd(), EV_READ);
+                    ev_io_start(loop, &cli_data->io_watcher);
+                    auto client_session = std::make_unique<detail::SessionManager::ClientSession>(id, std::move(hs_data->stream));
+                    log::console().info("Connect to client : {}", id);
+                }
+                case detail::HeadManager::Flags::kAdminNode: {
+
+                }
+                default: {
+                    log::console().error("Unknown node: {}", id);
+                    break;
+                }
             }
-            // 启动通信
-            peer->pipeline()->run(std::move(hs_data->stream));
-            log::console().info("Connect to {}", peer->node_id());
         }
     }
     delete hs_data;
+}
+
+void embkv::raft::Transport::client_cb(struct ev_loop* loop, struct ev_io* w, int revents) {
+    auto* cli_data = static_cast<ClientData*>(w->data);
+    client_data().erase(cli_data);
+    auto& transport = cli_data->transport;
+
+    if (revents & EV_READ) {
+        
+        return;
+    }
 }
 
 void embkv::raft::Transport::handle_handshake_timeout(struct ev_loop* loop, struct ev_timer* w, int revents) {
@@ -101,7 +138,7 @@ void embkv::raft::Transport::handle_serialize_timeout(struct ev_loop* loop, stru
     auto& peers = transport.session_manager().peers();
 
     if (revents & EV_TIMEOUT) {
-        auto& queue = ser_data->transport.to_pipeline_deser_queue();
+        auto& queue = transport.to_pipeline_deser_queue();
         auto count = queue.try_dequeue_bulk(deser_buf.data(), deser_buf.size());
         std::array<std::shared_ptr<std::string>, 64> ser_buf;
         for (auto i = 0; i < count; ++i) {
@@ -155,6 +192,11 @@ auto embkv::raft::Transport::handshake_data() noexcept
     return data;
 }
 
+auto embkv::raft::Transport::client_data() noexcept -> std::unordered_set<ClientData*>& {
+    thread_local std::unordered_set<ClientData*> data;
+    return data;
+}
+
 void embkv::raft::Transport::accept_loop() {
     socket::net::SocketAddr addr{};
     std::error_code ec;
@@ -183,6 +225,10 @@ void embkv::raft::Transport::accept_loop() {
     for (auto data : handshake_data()) {
         delete data;
     }
+    for (auto data : client_data()) {
+        delete data;
+    }
+    sess_mgr_.client_clear();
     ev_loop_destroy(ac_loop);
 }
 

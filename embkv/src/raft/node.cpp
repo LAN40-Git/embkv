@@ -168,12 +168,13 @@ void embkv::raft::RaftNode::handle_reissue_timeout(struct ev_loop* loop, struct 
 
 void embkv::raft::RaftNode::handle_request_vote_request(Message& msg) {
     auto request_vote_request = msg.mutable_request_vote_request();
+    auto cluster_id = msg.cluster_id();
     auto node_id = msg.node_id();
     auto term = request_vote_request->term();
     auto last_log_index = request_vote_request->last_log_index();
     auto last_log_term = request_vote_request->last_log_term();
 
-    if (msg.cluster_id() != cluster_id() || term < current_term()) {
+    if (cluster_id != this->cluster_id() || term < current_term()) {
         return;
     }
 
@@ -197,7 +198,7 @@ void embkv::raft::RaftNode::handle_request_vote_request(Message& msg) {
 
     // 构造并发送投票回复
     Message response;
-    response.set_cluster_id(cluster_id());
+    response.set_cluster_id(this->cluster_id());
     response.set_node_id(this->node_id());
     auto request_vote_response = response.mutable_request_vote_response();
     request_vote_response->set_term(term);
@@ -207,11 +208,12 @@ void embkv::raft::RaftNode::handle_request_vote_request(Message& msg) {
 
 void embkv::raft::RaftNode::handle_request_vote_response(Message& msg) {
     auto request_vote_response = msg.mutable_request_vote_response();
+    auto cluster_id = msg.cluster_id();
     auto node_id = msg.node_id();
     auto term = request_vote_response->term();
     auto granted = request_vote_response->granted();
 
-    if (msg.cluster_id() != cluster_id() || term < current_term()) {
+    if (cluster_id != this->cluster_id() || term < current_term()) {
         return;
     }
 
@@ -232,6 +234,7 @@ void embkv::raft::RaftNode::handle_request_vote_response(Message& msg) {
 
 void embkv::raft::RaftNode::handle_append_entries_request(Message& msg) {
     auto& append_entries_request = msg.append_entries_request();
+    auto cluster_id = msg.cluster_id();
     auto node_id = msg.node_id();
     auto term = append_entries_request.term();
     auto prev_log_index = append_entries_request.prev_log_index();
@@ -240,7 +243,7 @@ void embkv::raft::RaftNode::handle_append_entries_request(Message& msg) {
     auto leader_commit = append_entries_request.leader_commit();
     auto is_heartbeat = append_entries_request.is_heartbeat();
 
-    if (msg.cluster_id() != cluster_id() || term < current_term()) {
+    if (cluster_id != this->cluster_id() || term < current_term()) {
         return;
     }
 
@@ -255,7 +258,7 @@ void embkv::raft::RaftNode::handle_append_entries_request(Message& msg) {
     }
 
     Message response;
-    response.set_cluster_id(cluster_id());
+    response.set_cluster_id(this->cluster_id());
     response.set_node_id(node_id);
     auto append_entries_response = response.mutable_append_entries_response();
     append_entries_response->set_term(term);
@@ -286,13 +289,14 @@ void embkv::raft::RaftNode::handle_append_entries_request(Message& msg) {
 
 void embkv::raft::RaftNode::handle_append_entries_response(Message& msg) {
     auto& append_entries_response = msg.append_entries_response();
+    auto cluster_id = msg.cluster_id();
     auto node_id = msg.node_id();
     auto term = append_entries_response.term();
     auto success = append_entries_response.success();
     auto conflict_index = append_entries_response.conflict_index();
     auto last_log_index = append_entries_response.last_log_index();
 
-    if (msg.cluster_id() != cluster_id() || term < current_term()) {
+    if (cluster_id != this->cluster_id() || term < current_term()) {
         return;
     }
 

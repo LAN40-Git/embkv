@@ -29,12 +29,6 @@ class Transport {
         }
     };
 
-    struct ConnectData {
-        Transport& transport;
-        ev_io io_watcher{};
-        explicit ConnectData(Transport& t) : transport(t) {}
-    };
-
     struct SerializeData {
         Transport& transport;
         explicit SerializeData(Transport& t) : transport(t) {}
@@ -43,6 +37,17 @@ class Transport {
     struct ReceiveData {
         Transport& transport;
         explicit ReceiveData(Transport& t) : transport(t) {}
+    };
+
+    struct ClientData {
+        Transport& transport;
+        ev_io io_watcher{};
+        struct ev_loop* loop{nullptr};
+        explicit ClientData(Transport& t) : transport(t) {}
+
+        ~ClientData() {
+            ev_io_stop(loop, &io_watcher);
+        }
     };
 
 public:
@@ -68,12 +73,14 @@ public:
 private:
     static void accept_cb(struct ev_loop* loop, struct ev_io* w, int revents);
     static void handshake_cb(struct ev_loop* loop, struct ev_io* w, int revents);
+    static void client_cb(struct ev_loop* loop, struct ev_io* w, int revents);
     static void handle_handshake_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
     static void handle_serialize_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
     static void handle_receive_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
 
 private:
     static auto handshake_data() noexcept -> std::unordered_set<HandshakeData*>&;
+    static auto client_data() noexcept -> std::unordered_set<ClientData*>&;
 
 private:
     // ====== loop ======
