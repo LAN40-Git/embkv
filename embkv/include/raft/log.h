@@ -1,6 +1,7 @@
 #pragma once
 #include "proto/rpc.pb.h"
 #include <vector>
+#include <boost/optional/optional.hpp>
 
 namespace embkv::raft::detail
 {
@@ -15,8 +16,8 @@ public:
     auto last_log_term() const noexcept -> uint64_t { return last_log_term_; }
 
 public:
-    auto append_entry(EntryMeta& entry);
-    auto append_entries(std::vector<EntryMeta>& entries);
+    auto entry_at(uint64_t index) -> boost::optional<EntryMeta>;
+    void append_entry(const EntryMeta&& entry);
 
 private:
     std::vector<EntryMeta> entries_;

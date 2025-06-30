@@ -1,4 +1,5 @@
 #pragma once
+#include "raft/log.h"
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -22,6 +23,8 @@ public:
     void become_leader();
     void handle_higher_term(uint64_t term);
     void voted_for(boost::optional<uint64_t> id);
+    void update_next_index(uint64_t id, uint64_t index);
+    void update_match_index(uint64_t id, uint64_t index);
 
 
 public:
@@ -36,8 +39,6 @@ public:
     uint64_t                  last_applied_{0};
     uint64_t                  votes_{0};
     uint64_t                  last_heartbeat_{0};
-    uint64_t                  last_log_index_{0};
-    uint64_t                  last_log_term_{0};
 
     // Leader 状态
     std::unordered_map<uint64_t, uint64_t> next_index_{};
@@ -65,6 +66,11 @@ public:
         explicit ParseData(RaftNode& n) : node(n) {}
     };
 
+    struct ReissueData {
+        RaftNode& node;
+        explicit ReissueData(RaftNode& n) : node(n) {}
+    };
+
     explicit RaftNode(std::shared_ptr<Transport> transport)
         : config_(Config::load())
         , transport_(transport) {
@@ -89,14 +95,15 @@ public:
     auto current_term() const noexcept -> uint64_t { return st_.current_term_; }
     auto role() const noexcept -> detail::RaftStatus::Role { return st_.role_; }
     auto last_applied() const noexcept -> uint64_t { return st_.last_applied_; }
-    auto last_log_index() const noexcept -> uint64_t { return st_.last_log_index_; }
-    auto last_log_term() const noexcept -> uint64_t { return st_.last_log_term_; }
+    auto last_log_index() const noexcept -> uint64_t { return log_.last_log_index(); }
+    auto last_log_term() const noexcept -> uint64_t { return log_.last_log_term(); }
 
 public:
     // timer func
     static void handle_election_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
     static void handle_heartbeat_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
     static void handle_parse_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
+    static void handle_reissue_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
 
 private:
     void handle_request_vote_request(Message& msg);
@@ -115,11 +122,14 @@ private:
     std::atomic<bool>          is_running_{false};
     std::mutex                 run_mutex_;
     detail::RaftStatus         st_;
+    // TODO: 从持久化的日志中加载起点
+    detail::RaftLog            log_;
     std::shared_ptr<Transport> transport_;
     boost::asio::thread_pool   pool_{1};
     struct ev_loop*            loop_{nullptr};
     struct ev_timer            election_watcher_{};
     struct ev_timer            heartbeat_watcher_{};
     struct ev_timer            parse_watcher_{};
+    struct ev_timer            reissue_watcher_{}; // 补发日志计时器
 };
 } // namespace embkv::raft

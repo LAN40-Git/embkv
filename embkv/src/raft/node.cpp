@@ -27,6 +27,14 @@ void embkv::raft::detail::RaftStatus::voted_for(boost::optional<uint64_t> id) {
     voted_for_ = id;
 }
 
+void embkv::raft::detail::RaftStatus::update_next_index(uint64_t id, uint64_t index) {
+    next_index_[id] = index;
+}
+
+void embkv::raft::detail::RaftStatus::update_match_index(uint64_t id, uint64_t index) {
+    match_index_[id] = index;
+}
+
 void embkv::raft::RaftNode::run() noexcept {
     std::lock_guard<std::mutex> lock(run_mutex_);
     if (is_running_.load(std::memory_order_acquire)) {
@@ -119,6 +127,23 @@ void embkv::raft::RaftNode::handle_parse_timeout(struct ev_loop* loop, struct ev
     }
 }
 
+void embkv::raft::RaftNode::handle_reissue_timeout(struct ev_loop* loop, struct ev_timer* w, int revents) {
+    auto* re_data = static_cast<ReissueData*>(w->data);
+    auto& node = re_data->node;
+
+    if (revents & EV_TIMEOUT) {
+        // 每30ms为一个节点补发最多16条日志
+        for (auto next_index : node.st_.next_index_) {
+
+        }
+        return;
+    }
+
+    if (revents & EV_ERROR) {
+        log::console().error("handle_reissue_timeout error : {}", strerror(errno));
+    }
+}
+
 void embkv::raft::RaftNode::handle_request_vote_request(Message& msg) {
     auto request_vote_request = msg.mutable_request_vote_request();
     auto node_id = msg.node_id();
@@ -147,8 +172,6 @@ void embkv::raft::RaftNode::handle_request_vote_request(Message& msg) {
         reset_election_timer(); // 重置选举超时
         // TODO: 持久化状态
     }
-
-    log::console().info("node_id {} term {} granted {}", node_id, term, vote_granted);
 
     // 构造并发送投票回复
     Message response;
@@ -209,7 +232,33 @@ void embkv::raft::RaftNode::handle_append_entries_request(Message& msg) {
         return;
     }
 
-    // TODO: 处理日志复制请求
+    Message response;
+    response.set_cluster_id(cluster_id());
+    response.set_node_id(node_id);
+    auto append_entries_response = response.mutable_append_entries_response();
+    append_entries_response->set_term(term);
+
+
+    // 检查前一条日志是否存在
+    auto prev_entry = log_.entry_at(prev_log_index);
+    if (!prev_entry.has_value() || prev_log_term != prev_entry.value().term()) {
+        append_entries_response->set_success(false);
+        append_entries_response->set_conflict_index(prev_log_index);
+        append_entries_response->set_last_log_index(log_.last_log_index());
+        transport_->to_pipeline_deser_queue().enqueue(std::move(response), Priority::Critical);
+        return;
+    }
+
+    for (auto& entry : entries) {
+        log_.append_entry(std::move(entry));
+    }
+
+    // 回复
+    append_entries_response->set_success(true);
+    append_entries_response->set_last_log_index(log_.last_log_index());
+    transport_->to_pipeline_deser_queue().enqueue(std::move(response), Priority::Critical);
+
+    // TODO: 将日志应用到状态机
 
 }
 
@@ -221,8 +270,26 @@ void embkv::raft::RaftNode::handle_append_entries_response(Message& msg) {
     auto conflict_index = append_entries_response.conflict_index();
     auto last_log_index = append_entries_response.last_log_index();
 
-    // TODO: 处理日志复制回复
+    if (msg.cluster_id() != cluster_id() || term < current_term()) {
+        return;
+    }
 
+    if (term > current_term()) {
+        st_.handle_higher_term(term);
+        return;
+    }
+
+    // TODO: 处理日志复制回复
+    if (!success) {
+        // 处理日志冲突
+        log::console().info("Append entries failed");
+        st_.update_next_index(node_id, conflict_index); // 等待补发日志
+        return;
+    }
+
+    // 更新对应的状态
+    st_.update_next_index(node_id, last_log_index+1);
+    st_.update_match_index(node_id, last_log_index);
 }
 
 void embkv::raft::RaftNode::event_loop() {
@@ -230,21 +297,28 @@ void embkv::raft::RaftNode::event_loop() {
     auto* el_data = new ElectionData{*this, delay};
     auto* hb_data = new HeartbeatData{*this};
     auto* pr_data = new ParseData{*this};
+    auto* re_data = new ReissueData{*this};
     election_watcher_.data = el_data;
     heartbeat_watcher_.data = hb_data;
     parse_watcher_.data = pr_data;
+    reissue_watcher_.data = re_data;
     ev_timer_init(&election_watcher_, handle_election_timeout, delay, 0);
     ev_timer_init(&heartbeat_watcher_, handle_heartbeat_timeout, 0, 0.05);
     ev_timer_init(&parse_watcher_, handle_parse_timeout, 0, 0.003);
+    ev_timer_init(&reissue_watcher_, handle_reissue_timeout, 0, 0.03); // 每30ms补发一次日志
     ev_timer_start(loop_, &election_watcher_);
     ev_timer_start(loop_, &heartbeat_watcher_);
     ev_timer_start(loop_, &parse_watcher_);
+    ev_timer_start(loop_, &reissue_watcher_);
     ev_run(loop_, 0);
     ev_timer_stop(loop_, &election_watcher_);
     ev_timer_stop(loop_, &heartbeat_watcher_);
     ev_timer_stop(loop_, &parse_watcher_);
+    ev_timer_stop(loop_, &reissue_watcher_);
     delete el_data;
     delete hb_data;
+    delete pr_data;
+    delete re_data;
 }
 
 void embkv::raft::RaftNode::start_election() {
