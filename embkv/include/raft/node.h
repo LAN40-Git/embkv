@@ -89,12 +89,13 @@ public:
     }
 
 public:
-    // status
+    // status func
     auto cluster_id() const noexcept -> uint64_t { return config_.cluster_id; }
     auto node_id() const noexcept -> uint64_t { return config_.node_id; }
     auto current_term() const noexcept -> uint64_t { return st_.current_term_; }
     auto role() const noexcept -> detail::RaftStatus::Role { return st_.role_; }
     auto last_applied() const noexcept -> uint64_t { return st_.last_applied_; }
+    auto commit_index() const noexcept -> uint64_t { return st_.commit_index; }
     auto last_log_index() const noexcept -> uint64_t { return log_.last_log_index(); }
     auto last_log_term() const noexcept -> uint64_t { return log_.last_log_term(); }
 
@@ -106,16 +107,23 @@ public:
     static void handle_reissue_timeout(struct ev_loop* loop, struct ev_timer* w, int revents);
 
 private:
+    // rpc func
     void handle_request_vote_request(Message& msg);
     void handle_request_vote_response(Message& msg);
     void handle_append_entries_request(Message& msg);
     void handle_append_entries_response(Message& msg);
+    void handle_install_snapshot_request(Message& msg);
+    void handle_install_snapshot_response(Message& msg);
+    void handle_client_request(Message& msg);
+    void handle_client_response(Message& msg);
 
 private:
+    // raft func
     void event_loop();
     void start_election();
     void heartbeat();
     void reset_election_timer();
+    void send_to_pipeline(uint64_t id, Message& msg);
 
 private:
     const Config&              config_;

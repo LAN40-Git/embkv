@@ -81,8 +81,21 @@ message ClientRequest {
 }
 
 message ClientResponse {
-  uint64 request_id = 1;      // 必须回显客户端请求的ID
+  uint64 request_id = 1;      // 回显客户端请求ID
   uint64 leader_hint = 2;     // Leader节点ID提示（重定向用）
-  bool success = 3;           // 整体成功/失败
-  bytes result = 4;           // 操作结果（如文件内容）
+  bool success = 3;           // 操作是否成功
+  optional bytes value = 4;   // GET 操作返回的值（其他操作可为空）
+  optional string error = 5;  // 失败时的错误信息
+}
+
+// ====== KV键值操作 ======
+message KVOperation {
+  enum OperationType {
+    PUT = 0;    // 插入/更新
+    DELETE = 1; // 删除
+    GET = 2;    // 查询
+  }
+  OperationType op_type = 1;
+  string key = 2;           // 键
+  optional bytes value = 3; // 值
 }

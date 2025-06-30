@@ -100,22 +100,22 @@ void embkv::raft::RaftNode::handle_parse_timeout(struct ev_loop* loop, struct ev
         for (auto i = 0; i < count; ++i) {
             auto& msg = buf[i];
             switch (msg.content_case()) {
-                case Message::kRequestVoteRequest: {
-                    node.handle_request_vote_request(msg);
-                    break;
-                }
-                case Message::kRequestVoteResponse: {
-                    node.handle_request_vote_response(msg);
-                    break;
-                }
-                case Message::kAppendEntriesRequest: {
-                    node.handle_append_entries_request(msg);
-                    break;
-                }
-                case Message::kAppendEntriesResponse: {
-                    node.handle_append_entries_response(msg);
-                    break;
-                }
+                case Message::kRequestVoteRequest:
+                    node.handle_request_vote_request(msg); break;
+                case Message::kRequestVoteResponse:
+                    node.handle_request_vote_response(msg); break;
+                case Message::kAppendEntriesRequest:
+                    node.handle_append_entries_request(msg); break;
+                case Message::kAppendEntriesResponse:
+                    node.handle_append_entries_response(msg); break;
+                case Message::kClientRequest:
+                    node.handle_client_request(msg); break;
+                case Message::kClientResponse:
+                    node.handle_client_response(msg); break;
+                case Message::kSnapshotRequest:
+                    node.handle_install_snapshot_request(msg); break;
+                case Message::kSnapshotResponse:
+                    node.handle_install_snapshot_response(msg); break;
                 default: break;
             }
         }
@@ -132,9 +132,31 @@ void embkv::raft::RaftNode::handle_reissue_timeout(struct ev_loop* loop, struct 
     auto& node = re_data->node;
 
     if (revents & EV_TIMEOUT) {
+        if (node.role() != detail::RaftStatus::Role::Leader) {
+            return;
+        }
         // 每30ms为一个节点补发最多16条日志
         for (auto next_index : node.st_.next_index_) {
-
+            if (next_index.second < node.last_log_index()+1) {
+                for (auto i = next_index.second; i <= node.last_log_index(); i++) {
+                    auto entry = node.log_.entry_at(next_index.second);
+                    if (!entry.has_value()) {
+                        continue;
+                    }
+                    // 补发日志
+                    Message request;
+                    request.set_cluster_id(node.cluster_id());
+                    request.set_node_id(node.node_id());
+                    auto append_request_request = request.mutable_append_entries_request();
+                    append_request_request->set_term(node.current_term());
+                    append_request_request->set_is_heartbeat(false);
+                    append_request_request->set_leader_commit(node.commit_index());
+                    append_request_request->set_prev_log_index(next_index.second-1);
+                    append_request_request->set_prev_log_term(entry->term());
+                    node.send_to_pipeline(next_index.first, request);
+                }
+                return;
+            }
         }
         return;
     }
@@ -292,6 +314,22 @@ void embkv::raft::RaftNode::handle_append_entries_response(Message& msg) {
     st_.update_match_index(node_id, last_log_index);
 }
 
+void embkv::raft::RaftNode::handle_install_snapshot_request(Message& msg) {
+
+}
+
+void embkv::raft::RaftNode::handle_install_snapshot_response(Message& msg) {
+
+}
+
+void embkv::raft::RaftNode::handle_client_request(Message& msg) {
+
+}
+
+void embkv::raft::RaftNode::handle_client_response(Message& msg) {
+
+}
+
 void embkv::raft::RaftNode::event_loop() {
     uint64_t delay = util::FastRand::instance().rand_range(150, 300) / 1000.0;
     auto* el_data = new ElectionData{*this, delay};
@@ -359,4 +397,14 @@ void embkv::raft::RaftNode::reset_election_timer() {
     };
     ev_timer_set(&election_watcher_, random_delay(), 0.0);
     ev_timer_start(loop_, &election_watcher_);
+}
+
+void embkv::raft::RaftNode::send_to_pipeline(uint64_t id, Message& msg) {
+    auto& sess_mgr = transport_->session_manager();
+    auto peer = sess_mgr.peer_at(id);
+    if (!peer) {
+        log::console().error("Peer {} is not exist");
+        return;
+    }
+    peer->pipeline()->from_ser_queue().enqueue(std::make_shared<std::string>(msg.SerializeAsString()));
 }

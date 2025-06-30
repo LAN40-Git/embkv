@@ -15,6 +15,8 @@ set(SOURCE_FILES
         embkv/src/raft/log.cpp
         embkv/src/socket/socket.cpp
         embkv/src/common/util/fd.cpp
+        embkv/src/client/client.cpp
+        embkv/include/client/client.h
 )
 
 # fmt
