@@ -17,7 +17,7 @@ public:
 
 public:
     auto entry_at(uint64_t index) -> boost::optional<EntryMeta>;
-    void append_entry(const EntryMeta&& entry);
+    void append_entry(const EntryMeta& entry);
 
 private:
     std::vector<EntryMeta> entries_;

@@ -46,12 +46,12 @@ public:
 
 public:
     auto connect_to_server(uint64_t id) const -> socket::net::TcpStream;
-    void redirect_to_leader(uint64_t leader_hint);
-    auto put(const std::string& key, const std::string& value) -> bool;
-    auto get(const std::string& key) -> boost::optional<std::string>;
-    auto del(const std::string& key) -> bool;
+    void put(const std::string& key, const std::string& value);
+    void get(const std::string& key);
+    void del(const std::string& key);
 
 private:
+    using RequestMap = std::unordered_map<uint64_t, Message>;
     std::atomic<bool>        is_running_{false};
     std::mutex               run_mutex_;
     uint64_t                 id_;
@@ -61,6 +61,8 @@ private:
     EndPointMap              endpoints_;
     struct ev_loop*          loop_{nullptr};
     ev_io                    read_watcher_{};
+    std::atomic<uint64_t>    request_id_{0};
+    RequestMap               requests_;
     boost::asio::thread_pool pool_{1};
 };
 } // namespace embkv::client

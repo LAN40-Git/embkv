@@ -8,6 +8,7 @@
 #include <boost/none.hpp>
 #include <boost/optional/optional.hpp>
 #include "transport/transport.h"
+#include "statemachine.h"
 
 namespace embkv::raft
 {
@@ -35,7 +36,7 @@ public:
     // 易失性状态
     Role                      role_{Role::Follower};
     boost::optional<uint64_t> leader_id_{boost::none};
-    uint64_t                  commit_index{0};
+    uint64_t                  commit_index_{0};
     uint64_t                  last_applied_{0};
     uint64_t                  votes_{0};
     uint64_t                  last_heartbeat_{0};
@@ -93,9 +94,10 @@ public:
     auto cluster_id() const noexcept -> uint64_t { return config_.cluster_id; }
     auto node_id() const noexcept -> uint64_t { return config_.node_id; }
     auto current_term() const noexcept -> uint64_t { return st_.current_term_; }
+    auto leader_id() const noexcept -> uint64_t { return st_.leader_id_.value_or(0); }
     auto role() const noexcept -> detail::RaftStatus::Role { return st_.role_; }
     auto last_applied() const noexcept -> uint64_t { return st_.last_applied_; }
-    auto commit_index() const noexcept -> uint64_t { return st_.commit_index; }
+    auto commit_index() const noexcept -> uint64_t { return st_.commit_index_; }
     auto last_log_index() const noexcept -> uint64_t { return log_.last_log_index(); }
     auto last_log_term() const noexcept -> uint64_t { return log_.last_log_term(); }
 
@@ -115,7 +117,6 @@ private:
     void handle_install_snapshot_request(Message& msg);
     void handle_install_snapshot_response(Message& msg);
     void handle_client_request(Message& msg);
-    void handle_client_response(Message& msg);
 
 private:
     // raft func
@@ -124,6 +125,7 @@ private:
     void heartbeat();
     void reset_election_timer();
     void send_to_pipeline(uint64_t id, Message& msg);
+    void apply_to_state_machine(uint64_t commit_index);
 
 private:
     const Config&              config_;
@@ -134,6 +136,7 @@ private:
     detail::RaftLog            log_;
     std::shared_ptr<Transport> transport_;
     boost::asio::thread_pool   pool_{1};
+    StateMachine               state_machine_{};
     struct ev_loop*            loop_{nullptr};
     struct ev_timer            election_watcher_{};
     struct ev_timer            heartbeat_watcher_{};

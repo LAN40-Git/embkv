@@ -35,6 +35,21 @@ void embkv::raft::Transport::stop() noexcept {
     loops_.clear();
 }
 
+void embkv::raft::Transport::send_to_client(uint64_t id, const Message& msg) {
+    auto client = sess_mgr_.client_at(id);
+    if (!client) {
+        log::console().error("Client not exist id:{}", id);
+        return;
+    }
+    detail::HeadManager::Header header{
+        .length = msg.ByteSizeLong(),
+    };
+    detail::HeadManager::serialize(header);
+    auto& buffer = detail::HeadManager::buffer();
+    client->stream.write_exact(buffer.data(), buffer.size());
+    client->stream.write_exact(msg.SerializeAsString().data(), msg.ByteSizeLong());
+}
+
 void embkv::raft::Transport::accept_cb(struct ev_loop* loop, struct ev_io* w, int revents) {
     auto* ac_data = static_cast<AcceptData*>(w->data);
     if (revents & EV_READ) {
@@ -98,7 +113,9 @@ void embkv::raft::Transport::handshake_cb(struct ev_loop* loop, struct ev_io* w,
                     ev_io_init(&cli_data->io_watcher, client_cb, hs_data->stream.fd(), EV_READ);
                     ev_io_start(loop, &cli_data->io_watcher);
                     auto client_session = std::make_unique<detail::SessionManager::ClientSession>(id, std::move(hs_data->stream));
+                    sess_mgr.add_client(std::move(client_session));
                     log::console().info("Connect to client : {}", id);
+                    break;
                 }
                 case detail::HeadManager::Flags::kAdminNode: {
 
@@ -126,7 +143,8 @@ void embkv::raft::Transport::client_cb(struct ev_loop* loop, struct ev_io* w, in
     }
 
     if (revents & EV_READ) {
-        auto size = client->stream.read_exact(buf, sizeof(detail::HeadManager::Header));
+        auto& buffer = detail::HeadManager::buffer();
+        auto size = client->stream.read_exact(buffer.data(), buffer.size());
         if (size < sizeof(detail::HeadManager::Header)) {
             client_data().erase(cli_data);
             delete cli_data;

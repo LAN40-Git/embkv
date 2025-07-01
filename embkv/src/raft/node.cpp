@@ -79,6 +79,23 @@ void embkv::raft::RaftNode::handle_heartbeat_timeout(struct ev_loop* loop, struc
 
     if (revents & EV_TIMEOUT) {
         if (node.role() == detail::RaftStatus::Role::Leader) {
+            // 首先尝试推进状态机
+            std::vector<uint64_t> values;
+            for (auto& match_index : node.st_.match_index_) {
+                values.push_back(match_index.second);
+            }
+            if (values.empty()) {
+                return;
+            }
+            std::sort(values.begin(), values.end());
+            size_t size = values.size();
+            size_t index = node.transport_->session_manager().peer_count()-(size/2+1);
+            uint64_t value = values[index];
+            if (value > node.commit_index()) {
+                std::cout << value << std::endl;
+                node.st_.commit_index_ = value;
+                node.apply_to_state_machine(value);
+            }
             node.heartbeat();
         }
         return;
@@ -108,14 +125,12 @@ void embkv::raft::RaftNode::handle_parse_timeout(struct ev_loop* loop, struct ev
                     node.handle_append_entries_request(msg); break;
                 case Message::kAppendEntriesResponse:
                     node.handle_append_entries_response(msg); break;
-                case Message::kClientRequest:
-                    node.handle_client_request(msg); break;
-                case Message::kClientResponse:
-                    node.handle_client_response(msg); break;
                 case Message::kSnapshotRequest:
                     node.handle_install_snapshot_request(msg); break;
                 case Message::kSnapshotResponse:
                     node.handle_install_snapshot_response(msg); break;
+                case Message::kClientRequest:
+                    node.handle_client_request(msg); break;
                 default: break;
             }
         }
@@ -136,26 +151,39 @@ void embkv::raft::RaftNode::handle_reissue_timeout(struct ev_loop* loop, struct 
             return;
         }
         // 每30ms为一个节点补发最多16条日志
-        for (auto next_index : node.st_.next_index_) {
-            if (next_index.second < node.last_log_index()+1) {
-                for (auto i = next_index.second; i <= node.last_log_index(); i++) {
-                    auto entry = node.log_.entry_at(next_index.second);
-                    if (!entry.has_value()) {
-                        continue;
+        for (auto& next_index : node.st_.next_index_) {
+            if (next_index.second <= node.last_log_index()) {
+                // 准备请求的基础部分
+                Message request;
+                request.set_cluster_id(node.cluster_id());
+                request.set_node_id(node.node_id());
+                auto append_request = request.mutable_append_entries_request();
+                append_request->set_term(node.current_term());
+                append_request->set_is_heartbeat(false);
+                append_request->set_leader_commit(node.commit_index());
+
+                // 批量发送日志条目
+                std::vector<EntryMeta> entries;
+                for (auto i = next_index.second; i <= node.last_log_index(); ++i) {
+                    auto entry = node.log_.entry_at(i);
+                    if (entry.has_value()) {
+                        entries.push_back(entry.value());
                     }
-                    // 补发日志
-                    Message request;
-                    request.set_cluster_id(node.cluster_id());
-                    request.set_node_id(node.node_id());
-                    auto append_request_request = request.mutable_append_entries_request();
-                    append_request_request->set_term(node.current_term());
-                    append_request_request->set_is_heartbeat(false);
-                    append_request_request->set_leader_commit(node.commit_index());
-                    append_request_request->set_prev_log_index(next_index.second-1);
-                    append_request_request->set_prev_log_term(entry->term());
+                }
+
+                if (!entries.empty()) {
+                    auto prev_index = next_index.second - 1;
+                    auto prev_entry = node.log_.entry_at(prev_index);
+                    append_request->set_prev_log_index(prev_index);
+                    append_request->set_prev_log_term(prev_entry ? prev_entry->term() : 0);
+
+                    for (const auto& entry : entries) {
+                        auto* new_entry = append_request->add_entries();
+                        *new_entry = entry;
+                    }
+
                     node.send_to_pipeline(next_index.first, request);
                 }
-                return;
             }
         }
         return;
@@ -226,6 +254,11 @@ void embkv::raft::RaftNode::handle_request_vote_response(Message& msg) {
         st_.votes_++;
         if (st_.votes_ >= transport_->session_manager().peer_count()/2 +1) {
             st_.become_leader();
+            auto& peers = transport_->session_manager().peers();
+            for (auto& peer : peers) {
+                st_.match_index_[peer.first] = commit_index();
+                st_.next_index_[peer.first] = commit_index()+1;
+            }
             log::console().info("Become leader");
         }
     }
@@ -233,15 +266,15 @@ void embkv::raft::RaftNode::handle_request_vote_response(Message& msg) {
 }
 
 void embkv::raft::RaftNode::handle_append_entries_request(Message& msg) {
-    auto& append_entries_request = msg.append_entries_request();
+    auto append_entries_request = msg.mutable_append_entries_request();
     auto cluster_id = msg.cluster_id();
     auto node_id = msg.node_id();
-    auto term = append_entries_request.term();
-    auto prev_log_index = append_entries_request.prev_log_index();
-    auto prev_log_term = append_entries_request.prev_log_term();
-    auto& entries = append_entries_request.entries();
-    auto leader_commit = append_entries_request.leader_commit();
-    auto is_heartbeat = append_entries_request.is_heartbeat();
+    auto term = append_entries_request->term();
+    auto prev_log_index = append_entries_request->prev_log_index();
+    auto prev_log_term = append_entries_request->prev_log_term();
+    auto& entries = append_entries_request->entries();
+    auto leader_commit = append_entries_request->leader_commit();
+    auto is_heartbeat = append_entries_request->is_heartbeat();
 
     if (cluster_id != this->cluster_id() || term < current_term()) {
         return;
@@ -265,13 +298,15 @@ void embkv::raft::RaftNode::handle_append_entries_request(Message& msg) {
 
 
     // 检查前一条日志是否存在
-    auto prev_entry = log_.entry_at(prev_log_index);
-    if (!prev_entry.has_value() || prev_log_term != prev_entry.value().term()) {
-        append_entries_response->set_success(false);
-        append_entries_response->set_conflict_index(prev_log_index);
-        append_entries_response->set_last_log_index(log_.last_log_index());
-        transport_->to_pipeline_deser_queue().enqueue(std::move(response), Priority::Critical);
-        return;
+    if (prev_log_index != 0) {
+        auto prev_entry = log_.entry_at(prev_log_index);
+        if (!prev_entry.has_value() || prev_log_term != prev_entry.value().term()) {
+            append_entries_response->set_success(false);
+            append_entries_response->set_conflict_index(prev_log_index);
+            append_entries_response->set_last_log_index(log_.last_log_index());
+            transport_->to_pipeline_deser_queue().enqueue(std::move(response), Priority::High);
+            return;
+        }
     }
 
     for (auto& entry : entries) {
@@ -281,20 +316,17 @@ void embkv::raft::RaftNode::handle_append_entries_request(Message& msg) {
     // 回复
     append_entries_response->set_success(true);
     append_entries_response->set_last_log_index(log_.last_log_index());
-    transport_->to_pipeline_deser_queue().enqueue(std::move(response), Priority::Critical);
-
-    // TODO: 将日志应用到状态机
-
+    transport_->to_pipeline_deser_queue().enqueue(std::move(response), Priority::High);
 }
 
 void embkv::raft::RaftNode::handle_append_entries_response(Message& msg) {
-    auto& append_entries_response = msg.append_entries_response();
+    auto append_entries_response = msg.mutable_append_entries_response();
     auto cluster_id = msg.cluster_id();
     auto node_id = msg.node_id();
-    auto term = append_entries_response.term();
-    auto success = append_entries_response.success();
-    auto conflict_index = append_entries_response.conflict_index();
-    auto last_log_index = append_entries_response.last_log_index();
+    auto term = append_entries_response->term();
+    auto success = append_entries_response->success();
+    auto conflict_index = append_entries_response->conflict_index();
+    auto last_log_index = append_entries_response->last_log_index();
 
     if (cluster_id != this->cluster_id() || term < current_term()) {
         return;
@@ -305,7 +337,6 @@ void embkv::raft::RaftNode::handle_append_entries_response(Message& msg) {
         return;
     }
 
-    // TODO: 处理日志复制回复
     if (!success) {
         // 处理日志冲突
         log::console().info("Append entries failed");
@@ -327,11 +358,61 @@ void embkv::raft::RaftNode::handle_install_snapshot_response(Message& msg) {
 }
 
 void embkv::raft::RaftNode::handle_client_request(Message& msg) {
+    auto node_id = msg.node_id();
+    auto client_request = msg.mutable_client_request();
+    auto request_id = client_request->request_id();
 
-}
+    // 非 Leader 处理
+    if (role() != detail::RaftStatus::Role::Leader) {
+        Message response;
+        response.set_cluster_id(cluster_id());
+        response.set_node_id(this->node_id());
+        auto client_response = response.mutable_client_response();
+        client_response->set_request_id(request_id);
+        client_response->set_success(false);
+        client_response->set_error("Not leader");
+        client_response->set_leader_hint(leader_id());
+        transport_->send_to_client(node_id, std::move(response));
+        return;
+    }
 
-void embkv::raft::RaftNode::handle_client_response(Message& msg) {
+    // Leader 处理
+    auto last_index = last_log_index();
+    EntryMeta entry;
+    entry.set_term(current_term());
+    entry.set_index(last_index + 1);
+    entry.set_client_request(client_request->SerializeAsString());
 
+    // 追加日志
+    log_.append_entry(entry);
+    st_.update_next_index(node_id, last_log_index()+1);
+    st_.update_match_index(node_id, last_log_index());
+
+    // 构造 AppendEntries 请求
+    Message request;
+    request.set_cluster_id(this->cluster_id());
+    request.set_node_id(this->node_id());
+    auto append_request = request.mutable_append_entries_request();
+    append_request->set_term(current_term());
+    append_request->set_leader_commit(commit_index());
+    append_request->set_is_heartbeat(false);
+    append_request->set_prev_log_index(last_index);
+    if (last_index == 0) {
+        append_request->set_prev_log_term(0);
+    } else {
+        if (auto last_entry = log_.entry_at(last_index)) {
+            append_request->set_prev_log_term(last_entry->term());
+        } else {
+            return;
+        }
+    }
+
+    // 添加新条目
+    auto* new_entry = append_request->add_entries();
+    *new_entry = entry;
+
+    // 广播给所有节点
+    transport_->to_pipeline_deser_queue().enqueue(std::move(request), Priority::Medium);
 }
 
 void embkv::raft::RaftNode::event_loop() {
@@ -392,6 +473,7 @@ void embkv::raft::RaftNode::heartbeat() {
     auto append_entries_request = msg.mutable_append_entries_request();
     append_entries_request->set_term(current_term());
     append_entries_request->set_is_heartbeat(true);
+    append_entries_request->set_leader_commit(commit_index());
     transport_->to_pipeline_deser_queue().enqueue(std::move(msg), Priority::Critical);
 }
 
@@ -411,4 +493,19 @@ void embkv::raft::RaftNode::send_to_pipeline(uint64_t id, Message& msg) {
         return;
     }
     peer->pipeline()->from_ser_queue().enqueue(std::make_shared<std::string>(msg.SerializeAsString()));
+}
+
+void embkv::raft::RaftNode::apply_to_state_machine(uint64_t commit_index) {
+    st_.commit_index_ = commit_index;
+    while (last_applied() < commit_index) {
+        st_.last_applied_++;
+        auto entry = log_.entry_at(last_applied());
+        if (entry.has_value()) {
+            auto value = state_machine_.apply(std::move(entry.value()));
+            if (value.has_value()) {
+                // TODO: 维护index->{client_id, request_id}的映射表
+                log::console().info("{}", value.value());
+            }
+        }
+    }
 }

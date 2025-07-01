@@ -1,4 +1,5 @@
 #include "client/client.h"
+#include "raft/transport/head_manager.h"
 
 void embkv::client::Client::run() {
     std::lock_guard<std::mutex> lock(run_mutex_);
@@ -34,10 +35,54 @@ void embkv::client::Client::event_loop() {
     ev_run(loop_, 0);
     ev_io_stop(loop_, &read_watcher_);
     delete rd_data;
+    is_running_.store(false, std::memory_order_release);
 }
 
 void embkv::client::Client::read_cb(struct ev_loop* loop, struct ev_io* w, int revents) {
-    // TODO: 接收服务端的消息
+    thread_local char buf[10 * 1024];
+    auto* rd_data = static_cast<ReadData*>(w->data);
+
+
+    if (revents & EV_READ) {
+        auto& buffer = raft::detail::HeadManager::buffer();
+        auto size = rd_data->client.stream_.read_exact(buffer.data(), buffer.size());
+        if (size == 0) {
+            log::console().error("Failed to read header");
+            ev_break(loop, EVBREAK_ALL);
+            return;
+        }
+        auto header = raft::detail::HeadManager::deserialize();
+        size = rd_data->client.stream_.read_exact(buf, header->length);
+        if (size == 0) {
+            log::console().error("Failed to read {}", header->length);
+            ev_break(loop, EVBREAK_ALL);
+            return;
+        }
+        // 处理回复
+        Message msg;
+        if (msg.ParseFromArray(buf, header->length)) {
+            auto client_response = msg.mutable_client_response();
+            if (!client_response->success()) {
+                log::console().error("Operation failed : {}", client_response->error());
+                // 重定向到leader
+                rd_data->client.stream_ = rd_data->client.connect_to_server(client_response->leader_hint());
+                if (!rd_data->client.stream_.is_valid()) {
+                    log::console().error("Failed to connect to server: {}", client_response->error());
+                    ev_break(loop, EVBREAK_ALL);
+                }
+                return;
+            }
+
+            if (!client_response->value().empty()) {
+                std::cout << client_response->value() << std::endl;
+            }
+        }
+        return;
+    }
+
+    if (revents & EV_ERROR) {
+        log::console().error("read_cb error : {}", strerror(errno));
+    }
 }
 
 auto embkv::client::Client::connect_to_server(uint64_t id) const -> socket::net::TcpStream {
@@ -60,32 +105,88 @@ auto embkv::client::Client::connect_to_server(uint64_t id) const -> socket::net:
         log::console().error("Failed to connect {}:{}", ip, port);
         return socket::net::TcpStream{socket::detail::Socket{-1}};
     }
+    raft::detail::HeadManager::Header header{
+        .length = htobe64(id),
+    };
+    header.flags = raft::detail::HeadManager::Flags::kClientNode;
+    if (raft::detail::HeadManager::serialize(header)) {
+        auto& buffer = raft::detail::HeadManager::buffer();
+        stream.write_exact(buffer.data(), buffer.size());
+    }
 
+    log::console().info("Connect to server");
     return std::move(stream);
 }
 
-auto embkv::client::Client::put(const std::string& key, const std::string& value) -> bool {
+void embkv::client::Client::put(const std::string& key, const std::string& value) {
     if (!is_running()) {
         log::console().info("Client is not started.");
-        return false;
+        return;
     }
 
+    Message msg;
+    msg.set_node_id(id());
+    auto client_request = msg.mutable_client_request();
+    client_request->set_request_id(request_id_.fetch_add(1));
+    KVOperation command;
+    command.set_op_type(KVOperation_OperationType_PUT);
+    command.set_key(key);
+    command.set_value(value);
+    client_request->set_command(command.SerializeAsString());
+
+    raft::detail::HeadManager::Header header {
+        .length = htobe64(msg.ByteSizeLong()),
+    };
+    raft::detail::HeadManager::serialize(header);
+    auto& buffer = raft::detail::HeadManager::buffer();
+    stream_.write(buffer.data(), buffer.size());
+    stream_.write_exact(msg.SerializeAsString().data(), msg.ByteSizeLong());
 }
 
-auto embkv::client::Client::get(const std::string& key) -> boost::optional<std::string> {
+void embkv::client::Client::get(const std::string& key) {
     if (!is_running()) {
         log::console().info("Client is not started.");
-        return boost::none;
+        return;
     }
 
+    Message msg;
+    msg.set_node_id(id());
+    auto client_request = msg.mutable_client_request();
+    client_request->set_request_id(request_id_.fetch_add(1));
+    KVOperation command;
+    command.set_op_type(KVOperation_OperationType_GET);
+    command.set_key(key);
+    client_request->set_command(command.SerializeAsString());
 
+    raft::detail::HeadManager::Header header {
+        .length = htobe64(msg.ByteSizeLong()),
+    };
+    raft::detail::HeadManager::serialize(header);
+    auto& buffer = raft::detail::HeadManager::buffer();
+    stream_.write(buffer.data(), buffer.size());
+    stream_.write_exact(msg.SerializeAsString().data(), msg.ByteSizeLong());
 }
 
-auto embkv::client::Client::del(const std::string& key) -> bool {
+void embkv::client::Client::del(const std::string& key) {
     if (!is_running()) {
         log::console().info("Client is not started.");
-        return false;
+        return;
     }
 
+    Message msg;
+    msg.set_node_id(id());
+    auto client_request = msg.mutable_client_request();
+    client_request->set_request_id(request_id_.fetch_add(1));
+    KVOperation command;
+    command.set_op_type(KVOperation_OperationType_DELETE);
+    command.set_key(key);
+    client_request->set_command(command.SerializeAsString());
 
+    raft::detail::HeadManager::Header header {
+        .length = htobe64(msg.ByteSizeLong()),
+    };
+    raft::detail::HeadManager::serialize(header);
+    auto& buffer = raft::detail::HeadManager::buffer();
+    stream_.write(buffer.data(), buffer.size());
+    stream_.write_exact(msg.SerializeAsString().data(), msg.ByteSizeLong());
 }

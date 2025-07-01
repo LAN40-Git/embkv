@@ -33,6 +33,9 @@ find_library(LIBEV_LIBRARY ev
     PATHS /usr/lib /usr/lib64 /usr/local/lib /usr/lib/x86_64-linux-gnu
 )
 
+# sqlite3
+find_package(SQLite3 REQUIRED)
+
 # protobuf
 find_package(Protobuf REQUIRED)
 protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ./rpc.proto)
@@ -55,6 +58,7 @@ if(LIBEV_INCLUDE_DIR AND LIBEV_LIBRARY)
             ${Boost_LIBRARIES}
             Boost::thread
             fmt::fmt
+            SQLite::SQLite3
             nlohmann_json::nlohmann_json
     )
 else()

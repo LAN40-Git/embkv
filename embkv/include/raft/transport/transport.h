@@ -71,6 +71,9 @@ public:
     auto to_raftnode_deser_queue() noexcept -> DeserQueue& { return to_raftnode_deser_queue_; }
     auto to_pipeline_deser_queue() noexcept -> DeserQueue& { return to_pipeline_deser_queue_; }
 
+public:
+    void send_to_client(uint64_t id, const Message& msg);
+
 private:
     static void accept_cb(struct ev_loop* loop, struct ev_io* w, int revents);
     static void handshake_cb(struct ev_loop* loop, struct ev_io* w, int revents);
