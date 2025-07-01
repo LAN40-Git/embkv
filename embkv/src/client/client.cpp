@@ -47,7 +47,7 @@ void embkv::client::Client::read_cb(struct ev_loop* loop, struct ev_io* w, int r
         auto& buffer = raft::detail::HeadManager::buffer();
         auto size = rd_data->client.stream_.read_exact(buffer.data(), buffer.size());
         if (size == 0) {
-            log::console().error("Failed to read header");
+            log::console().error("Server closed");
             ev_break(loop, EVBREAK_ALL);
             return;
         }
@@ -74,7 +74,7 @@ void embkv::client::Client::read_cb(struct ev_loop* loop, struct ev_io* w, int r
             }
 
             if (!client_response->value().empty()) {
-                std::cout << client_response->value() << std::endl;
+                std::cout << "value : " << client_response->value() << std::endl;
             }
         }
         return;
@@ -139,7 +139,7 @@ void embkv::client::Client::put(const std::string& key, const std::string& value
     };
     raft::detail::HeadManager::serialize(header);
     auto& buffer = raft::detail::HeadManager::buffer();
-    stream_.write(buffer.data(), buffer.size());
+    stream_.write_exact(buffer.data(), buffer.size());
     stream_.write_exact(msg.SerializeAsString().data(), msg.ByteSizeLong());
 }
 
@@ -163,7 +163,7 @@ void embkv::client::Client::get(const std::string& key) {
     };
     raft::detail::HeadManager::serialize(header);
     auto& buffer = raft::detail::HeadManager::buffer();
-    stream_.write(buffer.data(), buffer.size());
+    stream_.write_exact(buffer.data(), buffer.size());
     stream_.write_exact(msg.SerializeAsString().data(), msg.ByteSizeLong());
 }
 
@@ -187,6 +187,6 @@ void embkv::client::Client::del(const std::string& key) {
     };
     raft::detail::HeadManager::serialize(header);
     auto& buffer = raft::detail::HeadManager::buffer();
-    stream_.write(buffer.data(), buffer.size());
+    stream_.write_exact(buffer.data(), buffer.size());
     stream_.write_exact(msg.SerializeAsString().data(), msg.ByteSizeLong());
 }

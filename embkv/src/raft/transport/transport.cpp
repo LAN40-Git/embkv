@@ -38,11 +38,11 @@ void embkv::raft::Transport::stop() noexcept {
 void embkv::raft::Transport::send_to_client(uint64_t id, const Message& msg) {
     auto client = sess_mgr_.client_at(id);
     if (!client) {
-        log::console().error("Client not exist id:{}", id);
+        // log::console().error("Client not exist id:{}", id);
         return;
     }
     detail::HeadManager::Header header{
-        .length = msg.ByteSizeLong(),
+        .length = htobe64(msg.ByteSizeLong()),
     };
     detail::HeadManager::serialize(header);
     auto& buffer = detail::HeadManager::buffer();
@@ -136,7 +136,6 @@ void embkv::raft::Transport::client_cb(struct ev_loop* loop, struct ev_io* w, in
     auto& transport = cli_data->transport;
     auto client = transport.session_manager().client_at(cli_data->id);
     if (!client) {
-        log::console().error("Client is not exist {}", cli_data->id);
         client_data().erase(cli_data);
         delete cli_data;
         return;
@@ -147,6 +146,7 @@ void embkv::raft::Transport::client_cb(struct ev_loop* loop, struct ev_io* w, in
         auto size = client->stream.read_exact(buffer.data(), buffer.size());
         if (size < sizeof(detail::HeadManager::Header)) {
             client_data().erase(cli_data);
+            transport.session_manager().remove_client(cli_data->id);
             delete cli_data;
             return;
         }
@@ -154,6 +154,7 @@ void embkv::raft::Transport::client_cb(struct ev_loop* loop, struct ev_io* w, in
         size = client->stream.read_exact(buf, header->length);
         if (size == 0) {
             client_data().erase(cli_data);
+            transport.session_manager().remove_client(cli_data->id);
             delete cli_data;
             return;
         }

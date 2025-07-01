@@ -92,7 +92,6 @@ void embkv::raft::RaftNode::handle_heartbeat_timeout(struct ev_loop* loop, struc
             size_t index = node.transport_->session_manager().peer_count()-(size/2+1);
             uint64_t value = values[index];
             if (value > node.commit_index()) {
-                std::cout << value << std::endl;
                 node.st_.commit_index_ = value;
                 node.apply_to_state_machine(value);
             }
@@ -284,6 +283,10 @@ void embkv::raft::RaftNode::handle_append_entries_request(Message& msg) {
         st_.handle_higher_term(term);
     }
 
+    if (leader_commit > commit_index()) {
+        apply_to_state_machine(leader_commit);
+    }
+
     if (is_heartbeat) {
         st_.last_heartbeat_ = util::current_ms();
         st_.leader_id_ = node_id;
@@ -292,7 +295,7 @@ void embkv::raft::RaftNode::handle_append_entries_request(Message& msg) {
 
     Message response;
     response.set_cluster_id(this->cluster_id());
-    response.set_node_id(node_id);
+    response.set_node_id(this->node_id());
     auto append_entries_response = response.mutable_append_entries_response();
     append_entries_response->set_term(term);
 
@@ -372,7 +375,7 @@ void embkv::raft::RaftNode::handle_client_request(Message& msg) {
         client_response->set_success(false);
         client_response->set_error("Not leader");
         client_response->set_leader_hint(leader_id());
-        transport_->send_to_client(node_id, std::move(response));
+        transport_->send_to_client(node_id, response);
         return;
     }
 
@@ -387,6 +390,7 @@ void embkv::raft::RaftNode::handle_client_request(Message& msg) {
     log_.append_entry(entry);
     st_.update_next_index(node_id, last_log_index()+1);
     st_.update_match_index(node_id, last_log_index());
+    requests_.emplace(last_log_index(), Request{node_id, request_id});
 
     // 构造 AppendEntries 请求
     Message request;
@@ -501,11 +505,19 @@ void embkv::raft::RaftNode::apply_to_state_machine(uint64_t commit_index) {
         st_.last_applied_++;
         auto entry = log_.entry_at(last_applied());
         if (entry.has_value()) {
+            // 构造回复并发送给客户端
+            auto& request = requests_[last_applied()];
+            Message response;
+            response.set_cluster_id(cluster_id());
+            response.set_node_id(this->node_id());
+            auto client_response = response.mutable_client_response();
+            client_response->set_request_id(request.request_id);
+            client_response->set_success(true);
             auto value = state_machine_.apply(std::move(entry.value()));
             if (value.has_value()) {
-                // TODO: 维护index->{client_id, request_id}的映射表
-                log::console().info("{}", value.value());
+                client_response->set_value(std::move(value.value()));
             }
+            transport_->send_to_client(request.client_id, response);
         }
     }
 }

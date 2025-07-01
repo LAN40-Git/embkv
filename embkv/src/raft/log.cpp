@@ -10,5 +10,6 @@ auto embkv::raft::detail::RaftLog::entry_at(uint64_t index) -> boost::optional<E
 
 void embkv::raft::detail::RaftLog::append_entry(const EntryMeta& entry) {
     entries_.emplace_back(entry);
-    std::cout << "Append entry " << entries_.size() << "\n";
+    last_log_index_ = entry.index();
+    last_log_term_ = entry.term();
 }

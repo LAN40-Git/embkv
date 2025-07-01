@@ -72,6 +72,13 @@ public:
         explicit ReissueData(RaftNode& n) : node(n) {}
     };
 
+    struct Request {
+        uint64_t client_id{0};
+        uint64_t request_id{0};
+        Request() = default;
+        explicit Request(uint64_t c, uint64_t r) : client_id(c), request_id(r) {}
+    };
+
     explicit RaftNode(std::shared_ptr<Transport> transport)
         : config_(Config::load())
         , transport_(transport) {
@@ -134,6 +141,7 @@ private:
     detail::RaftStatus         st_;
     // TODO: 从持久化的日志中加载起点
     detail::RaftLog            log_;
+    std::unordered_map<uint64_t, Request> requests_;
     std::shared_ptr<Transport> transport_;
     boost::asio::thread_pool   pool_{1};
     StateMachine               state_machine_{};

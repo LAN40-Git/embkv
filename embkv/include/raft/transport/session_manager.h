@@ -11,6 +11,9 @@ public:
         socket::net::TcpStream stream;
         explicit ClientSession(uint64_t id, socket::net::TcpStream&& stream)
             : id(id), stream(std::move(stream)) {}
+        ~ClientSession() {
+            std::cout << "Client closed : " << id << std::endl;
+        }
     };
     using PeerMap = std::unordered_map<uint64_t, std::unique_ptr<Peer>>;
     using ClientMap = std::unordered_map<uint64_t, std::unique_ptr<ClientSession>>;

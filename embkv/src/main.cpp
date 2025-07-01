@@ -82,6 +82,7 @@ void run_client_node() {
             client.get(std::move(key));
         } else if (option == "6") {
             std::string key;
+            std::cin >> key;
             client.del(std::move(key));
         }
     }
