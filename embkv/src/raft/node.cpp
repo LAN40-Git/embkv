@@ -513,10 +513,8 @@ void embkv::raft::RaftNode::apply_to_state_machine(uint64_t commit_index) {
             auto client_response = response.mutable_client_response();
             client_response->set_request_id(request.request_id);
             client_response->set_success(true);
-            auto value = state_machine_.apply(std::move(entry.value()));
-            if (value.has_value()) {
-                client_response->set_value(std::move(value.value()));
-            }
+            auto value = state_machine_.apply(entry.value());
+            client_response->set_value(value.value_or("Null"));
             transport_->send_to_client(request.client_id, response);
         }
     }

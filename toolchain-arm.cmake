@@ -1,4 +1,3 @@
-
 set(CMAKE_SYSTEM_PROCESSOR arm)
 
 # 指定编译器

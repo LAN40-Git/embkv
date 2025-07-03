@@ -76,6 +76,7 @@ void embkv::client::Client::read_cb(struct ev_loop* loop, struct ev_io* w, int r
             if (!client_response->value().empty()) {
                 std::cout << "value : " << client_response->value() << std::endl;
             }
+            std::cout << "Operation " << client_response->request_id() << " success." << std::endl;
         }
         return;
     }

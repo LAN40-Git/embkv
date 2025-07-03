@@ -37,6 +37,7 @@ public:
         }
 
         sqlite3_finalize(stmt);
+        std::cout << "Get result: " << result.value_or("Null") << std::endl;
         return result;
     }
 
