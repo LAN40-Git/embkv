@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 源文件路径
-SOURCE_FILE="./build/main"
+SOURCE_FILE="./main"
 
 # 检查源文件是否存在
 if [ ! -f "$SOURCE_FILE" ]; then
