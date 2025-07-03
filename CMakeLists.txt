@@ -3,8 +3,9 @@ if(NOT CMAKE_TOOLCHAIN_FILE)
   message(FATAL_ERROR "必须指定ARM工具链文件！")
 endif()
 project(embkv)
+cmake_policy(SET CMP0167 NEW)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 交叉编译时禁用宿主机的包查找（避免误用 x86_64 库）
@@ -23,7 +24,11 @@ set(fmt_DIR "/usr/lib/arm-linux-gnueabihf/cmake/fmt")
 find_package(fmt REQUIRED)
 find_package(nlohmann_json 3.5 REQUIRED)
 find_package(SQLite3 REQUIRED)
-find_package(Protobuf REQUIRED)
+
+set(Protobuf_ROOT "/usr/local/protobuf-arm")
+set(Protobuf_INCLUDE_DIR "${Protobuf_ROOT}/include")
+set(Protobuf_LIBRARY "${Protobuf_ROOT}/lib/libprotobuf.a")  # 明确指定静态库
+set(Protobuf_PROTOC_EXECUTABLE "${Protobuf_ROOT}/bin/protoc")
 
 # libev：手动指定交叉编译的路径
 find_path(LIBEV_INCLUDE_DIR ev.h
@@ -34,8 +39,23 @@ find_library(LIBEV_LIBRARY ev
 )
 
 # Protobuf 代码生成
-protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ./rpc.proto)
-set_source_files_properties(${PROTO_HDRS} PROPERTIES GENERATED TRUE)
+#protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ./rpc.proto)
+#set_source_files_properties(${PROTO_HDRS} PROPERTIES GENERATED TRUE)
+
+set(SOURCE_FILES
+        embkv/src/main.cpp
+        embkv/src/raft/node.cpp
+        embkv/src/raft/transport/transport.cpp
+        embkv/src/raft/transport/session_manager.cpp
+        embkv/src/raft/peer/pipeline.cpp
+        embkv/src/raft/log.cpp
+        embkv/src/socket/socket.cpp
+        embkv/src/common/util/fd.cpp
+        embkv/src/client/client.cpp
+)
+
+set(PROTO_SRCS embkv/src/proto/rpc.pb.cc)
+set(PROTO_HDRS embkv/src/proto/rpc.pb.h)
 
 # 可执行文件
 add_executable(main
@@ -47,6 +67,7 @@ add_executable(main
 target_include_directories(main PRIVATE
         ${LIBEV_INCLUDE_DIR}
         ${PROTO_HDRS}
+        ${Protobuf_INCLUDE_DIR}
         ${Boost_INCLUDE_DIRS}
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/embkv/include>
 )
@@ -54,12 +75,12 @@ target_include_directories(main PRIVATE
 # 链接库
 target_link_libraries(main PRIVATE
         ${LIBEV_LIBRARY}
+        ${Protobuf_LIBRARY}
         Boost::system
         Boost::thread
         fmt::fmt
         SQLite::SQLite3
         nlohmann_json::nlohmann_json
-        protobuf::libprotobuf
 )
 
 if(NOT LIBEV_INCLUDE_DIR OR NOT LIBEV_LIBRARY)
